@@ -64,10 +64,10 @@ module FlightConfiguration
     end
 
     def attributes
-      @attributes ||= []
+      @attributes ||= {}
     end
 
-    def attribute(name, env_var: true, default: nil, **opts, &block)
+    def attribute(name, env_var: true, required: true, default: nil, **opts, &block)
       name = name.to_s
       transform = if opts.key? :transform
                     opts[:transform]
@@ -76,10 +76,11 @@ module FlightConfiguration
                   elsif default.is_a? Integer
                     :to_i
                   end
-      attributes << {
+      attributes[name] = {
         name: name.to_s,
         env_var: env_var,
         default: default,
+        required: required,
         transform: transform
       }
       attr_accessor name.to_s
@@ -89,7 +90,12 @@ module FlightConfiguration
       merged = defaults.merge(from_config_files).merge(from_env_vars)
       new.tap do |config|
         merged.each do |key, value|
-          config.send("#{key}=", transform(key, value))
+          required = attributes.fetch(key, {})[:required]
+          if value.nil? && required
+            raise Error, "The required config has not been provided: #{key}"
+          else
+            config.send("#{key}=", transform(key, value))
+          end
         end
       end
     rescue => e
@@ -97,7 +103,7 @@ module FlightConfiguration
     end
 
     def defaults
-      attributes.reduce({}) do |accum, attr|
+      attributes.values.reduce({}) do |accum, attr|
         key = attr[:name]
         default = attr[:default]
         accum[key] = if default.respond_to?(:arity)
@@ -128,7 +134,7 @@ module FlightConfiguration
     end
 
     def from_env_vars
-      attributes.reduce({}) do |accum, attr|
+      attributes.values.reduce({}) do |accum, attr|
         if attr[:env_var]
           env_var = "#{env_var_prefix}_#{attr[:name].upcase}"
           unless ENV[env_var].nil?
@@ -140,9 +146,7 @@ module FlightConfiguration
     end
 
     def transform(key, value)
-      config_definition = attributes.detect do |h|
-        h[:name].to_s == key.to_s
-      end
+      config_definition = attributes.fetch(key.to_s, {})
       transform = config_definition[:transform]
       if transform.nil?
         value
