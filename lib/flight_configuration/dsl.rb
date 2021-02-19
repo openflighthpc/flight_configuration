@@ -67,7 +67,7 @@ module FlightConfiguration
       @attributes ||= {}
     end
 
-    def attribute(name, env_var: true, required: true, default: nil, **opts, &block)
+    def attribute(name, env_var: true, required: true, default: nil, **opts)
       name = name.to_s
       transform = if opts.key? :transform
                     opts[:transform]
@@ -76,6 +76,27 @@ module FlightConfiguration
                   elsif default.is_a? Integer
                     :to_i
                   end
+
+      # Giving a Pathname object as the transform triggers a special handler
+      # which will expand the path. This achieves the following goals:
+      # 1. Ensures both path values and defaults are absolute once the config is loaded,
+      # 2. Allows the application to define the relative path base,
+      # 3. Does not modify the path if it is already absolute, and
+      # 4. Supports expanding paths from the user's home directory (e.g. ~/.local/flight)
+      #
+      # NOTE: Point 4 has less utility for server applications,
+      #       but is useful for multi-install CLI environments
+      # NOTE: XDG is not supported out of the box, this will need to be done manually
+      #       on a per application basis
+      if transform.is_a? Pathname
+        transform_root = transform
+        transform = ->(path) do
+          path = Pathname.new(path.to_s) unless path.is_a?(Pathname)
+          path.expand_path(transform_root)
+        end
+      end
+
+      # Define the attribute
       attributes[name] = {
         name: name.to_s,
         env_var: env_var,
@@ -106,11 +127,7 @@ module FlightConfiguration
       attributes.values.reduce({}) do |accum, attr|
         key = attr[:name]
         default = attr[:default]
-        accum[key] = if default.respond_to?(:arity)
-          default.arity == 0 ? default.call : default.call(root_path)
-        else
-          default
-        end
+        accum[key] = default.respond_to?(:call) ? default.call : default
         accum
       end.deep_transform_keys(&:to_s)
     end
