@@ -25,10 +25,33 @@
 # https://github.com/openflighthpc/flight_configuration
 #==============================================================================
 
-require "flight_configuration/version"
-require "flight_configuration/dsl"
-require "flight_configuration/rack_dsl"
-
 module FlightConfiguration
-  class Error < StandardError; end
+  module RackDSL
+    include DSL
+
+    def application_name(name = nil)
+      @application_name ||= name
+      if @application_name.nil?
+        raise Error, 'The application_name has not been defined!'
+      end
+      @application_name
+    end
+
+    def config_files(*_)
+      @config_files ||= begin
+        if ENV['RACK_ENV'] == 'production'
+          ["etc/#{application_name}.yaml"]
+        else
+          ["etc/#{application_name}.#{ENV['RACK_ENV']}.yaml",
+           "etc/#{application_name}.#{ENV['RACK_ENV']}.local.yaml"]
+        end
+      end
+      super
+    end
+
+    def env_var_prefix(*_)
+      @env_var_prefix ||= application_name.upcase.gsub('-', '_')
+      super
+    end
+  end
 end
