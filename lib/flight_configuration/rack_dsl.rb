@@ -40,10 +40,10 @@ module FlightConfiguration
     def config_files(*_)
       @config_files ||= begin
         if ENV['RACK_ENV'] == 'production'
-          ["etc/#{application_name}.yaml"]
+          [root_path.join("etc/#{application_name}.yaml")]
         else
-          ["etc/#{application_name}.#{ENV['RACK_ENV']}.yaml",
-           "etc/#{application_name}.#{ENV['RACK_ENV']}.local.yaml"]
+          [root_path.join("etc/#{application_name}.#{ENV['RACK_ENV']}.yaml"),
+           root_path.join("etc/#{application_name}.#{ENV['RACK_ENV']}.local.yaml")]
         end
       end
       super
