@@ -77,25 +77,6 @@ module FlightConfiguration
                     :to_i
                   end
 
-      # Giving a Pathname object as the transform triggers a special handler
-      # which will expand the path. This achieves the following goals:
-      # 1. Ensures both path values and defaults are absolute once the config is loaded,
-      # 2. Allows the application to define the relative path base,
-      # 3. Does not modify the path if it is already absolute, and
-      # 4. Supports expanding paths from the user's home directory (e.g. ~/.local/flight)
-      #
-      # NOTE: Point 4 has less utility for server applications,
-      #       but is useful for multi-install CLI environments
-      # NOTE: XDG is not supported out of the box, this will need to be done manually
-      #       on a per application basis
-      if transform.is_a? Pathname
-        transform_root = transform
-        transform = ->(path) do
-          path = Pathname.new(path.to_s) unless path.is_a?(Pathname)
-          path.expand_path(transform_root)
-        end
-      end
-
       # Define the attribute
       attributes[name] = {
         name: name.to_s,
@@ -130,6 +111,10 @@ module FlightConfiguration
         accum[key] = default.respond_to?(:call) ? default.call : default
         accum
       end.deep_transform_keys(&:to_s)
+    end
+
+    def relative_to(base_path)
+      ->(value) { File.expand_path(value, base_path) }
     end
 
     private
