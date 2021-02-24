@@ -138,7 +138,7 @@ module FlightConfiguration
     def from_env_vars
       attributes.values.reduce({}) do |accum, attr|
         if attr[:env_var]
-          env_var = "#{env_var_prefix}_#{attr[:name].upcase}"
+          env_var = "#{env_var_prefix}_#{attr[:name]}"
           unless ENV[env_var].nil?
             accum[attr[:name]] = ENV[env_var]
           end
