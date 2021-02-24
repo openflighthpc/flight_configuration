@@ -50,7 +50,12 @@ module FlightConfiguration
     end
 
     def env_var_prefix(*_)
-      @env_var_prefix ||= application_name.upcase.gsub('-', '_')
+      @env_var_prefix ||= begin
+        parts = application_name.split(/[_-]/)
+        flight_part = (parts.first == 'flight' ? [parts.shift] : [])
+        parts.map!(&:upcase)
+        [*flight_part, *parts].join('_')
+      end
       super
     end
   end
