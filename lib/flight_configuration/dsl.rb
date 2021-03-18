@@ -29,6 +29,21 @@ require 'pathname'
 require 'yaml'
 
 module FlightConfiguration
+  module DeepStringifyKeys
+    def self.stringify(object)
+      case object
+      when Hash
+        object.each_with_object(object.class.new) do |(key, value), memo|
+          memo[key.to_s] = self.stringify(value)
+        end
+      when Array
+        object.map { |v| self.stringify(v) }
+      else
+        object
+      end
+    end
+  end
+
   module DSL
     def config_files(*paths)
       @config_files ||= []
@@ -105,12 +120,13 @@ module FlightConfiguration
     end
 
     def defaults
-      attributes.values.reduce({}) do |accum, attr|
+      hash = attributes.values.reduce({}) do |accum, attr|
         key = attr[:name]
         default = attr[:default]
         accum[key] = default.respond_to?(:call) ? default.call : default
         accum
-      end.deep_transform_keys(&:to_s)
+      end
+      DeepStringifyKeys.stringify(hash)
     end
 
     def relative_to(base_path)
@@ -129,14 +145,14 @@ module FlightConfiguration
               "Please note that YAML must be consistently indented using spaces. Tabs are not allowed. " \
               "Error: #{$!.message}"
           end
-          config = ( yaml || {} ).deep_transform_keys(&:to_s)
+          config = ( DeepStringifyKeys.stringify(yaml) || {} )
         end
         accum.merge(config || {})
       end
     end
 
     def from_env_vars
-      attributes.values.reduce({}) do |accum, attr|
+      envs = attributes.values.reduce({}) do |accum, attr|
         if attr[:env_var]
           env_var = "#{env_var_prefix}_#{attr[:name]}"
           unless ENV[env_var].nil?
@@ -144,7 +160,8 @@ module FlightConfiguration
           end
         end
         accum
-      end.deep_transform_keys(&:to_s)
+      end
+      DeepStringifyKeys.stringify(envs)
     end
 
     def transform(key, value)
