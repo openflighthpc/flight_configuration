@@ -25,11 +25,41 @@
 # https://github.com/openflighthpc/flight_configuration
 #==============================================================================
 
-require "flight_configuration/version"
-require "flight_configuration/dsl"
-require "flight_configuration/rack_dsl"
-require "flight_configuration/standard_dsl"
-
 module FlightConfiguration
-  class Error < StandardError; end
+  module StandardDSL
+    include DSL
+
+    def application_name(name=nil)
+      @application_name ||= name
+      if @application_name.nil?
+        raise Error, 'The application_name has not been defined!'
+      end
+      @application_name
+    end
+
+    def root_path(*_)
+      super Flight.root
+    end
+
+    def config_files(*_)
+      @config_files ||= [
+        root_path.join("etc/#{application_name}.yaml"),
+        root_path.join("etc/#{application_name}.#{Flight.env}.yaml"),
+        root_path.join("etc/#{application_name}.local.yaml"),
+        root_path.join("etc/#{application_name}.#{Flight.env}.local.yaml"),
+      ]
+      super
+    end
+
+    def env_var_prefix(*_)
+      @env_var_prefix ||=
+        begin
+          parts = application_name.split(/[_-]/)
+          flight_part = (parts.first == 'flight' ? [parts.shift] : [])
+          parts.map!(&:upcase)
+          [*flight_part, *parts].join('_')
+        end
+      super
+    end
+  end
 end

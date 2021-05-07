@@ -133,21 +133,24 @@ module FlightConfiguration
       ->(value) { File.expand_path(value, base_path) }
     end
 
+    def from_config_file(config_file)
+      return {} unless File.exists?(config_file)
+      yaml =
+        begin
+          YAML.load_file(config_file)
+        rescue ::Psych::SyntaxError
+          raise "YAML syntax error occurred while parsing #{config_file}. " \
+            "Please note that YAML must be consistently indented using spaces. Tabs are not allowed. " \
+            "Error: #{$!.message}"
+        end
+      FlightConfiguration::DeepStringifyKeys.stringify(yaml) || {}
+    end
+
     private
 
     def from_config_files
       config_files.reduce({}) do |accum, config_file|
-        if File.exists? config_file
-          yaml = begin
-            YAML.load_file(config_file)
-          rescue ::Psych::SyntaxError
-            raise "YAML syntax error occurred while parsing #{config_file}. " \
-              "Please note that YAML must be consistently indented using spaces. Tabs are not allowed. " \
-              "Error: #{$!.message}"
-          end
-          config = ( DeepStringifyKeys.stringify(yaml) || {} )
-        end
-        accum.merge(config || {})
+        accum.merge(from_config_file(config_file) || {})
       end
     end
 
