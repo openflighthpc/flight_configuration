@@ -26,9 +26,9 @@
 #==============================================================================
 
 require "flight_configuration/version"
+require "flight_configuration/base_dsl"
 require "flight_configuration/dsl"
 require "flight_configuration/rack_dsl"
-require "flight_configuration/standard_dsl"
 
 module FlightConfiguration
   class Error < StandardError; end
