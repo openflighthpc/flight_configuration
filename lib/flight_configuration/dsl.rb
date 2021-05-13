@@ -77,9 +77,8 @@ module FlightConfiguration
       @env_var_prefix ||=
         begin
           parts = application_name.split(/[_-]/)
-          flight_part = (parts.first == 'flight' ? [parts.shift] : [])
-          parts.map!(&:upcase)
-          [*flight_part, *parts].join('_')
+          parts.shift if parts.first == 'flight'
+          ['flight', parts.map(&:upcase)].join('_')
         end
       super
     end

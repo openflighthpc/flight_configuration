@@ -36,7 +36,15 @@ module FlightConfiguration
   # Provides convention over the mechanism provided in `BaseDSL`.  The
   # convention is suitable for a Rack app, hence the name.
   module RackDSL
-    include DSL
+    include BaseDSL
+
+    def application_name(name=nil)
+      @application_name ||= name
+      if @application_name.nil?
+        raise Error, 'The application_name has not been defined!'
+      end
+      @application_name
+    end
 
     def config_files(*_)
       @config_files ||= begin
@@ -50,7 +58,6 @@ module FlightConfiguration
       super
     end
 
-    # Copied from BaseDSL to "undo" the version set in `DSL`.
     def root_path(path = nil)
       case path
       when String
@@ -62,6 +69,17 @@ module FlightConfiguration
         raise Error, "The root_path has not been defined!"
       end
       @root_path
+    end
+
+    def env_var_prefix(*_)
+      @env_var_prefix ||=
+        begin
+          parts = application_name.split(/[_-]/)
+          flight_part = (parts.first == 'flight' ? [parts.shift] : [])
+          parts.map!(&:upcase)
+          [*flight_part, *parts].join('_')
+        end
+      super
     end
   end
 end
