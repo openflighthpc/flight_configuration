@@ -124,7 +124,7 @@ module FlightConfiguration
             raise Error, "The required config has not been provided: #{key}"
           else
             config.instance_variable_get(:@__sources__)[key] = source
-            config.send("#{key}=", transform(key, source.value))
+            config.send("#{key}=", transform(config, key, source.value))
           end
         end
 
@@ -202,7 +202,7 @@ module FlightConfiguration
       DeepStringifyKeys.stringify(envs)
     end
 
-    def transform(key, value)
+    def transform(config, key, value)
       config_definition = attributes.fetch(key.to_s, {})
       transform = config_definition[:transform]
       if transform.nil?
@@ -211,6 +211,14 @@ module FlightConfiguration
         transform.call(value)
       else
         value.send(transform)
+      end
+    rescue
+      # NOTE: Ideally the error would be logged, however this can't be done
+      #       without forming a recursive loop
+      if config.respond_to?(:errors) && config.respond_to?(:valid?)
+        config.errors.add(key.to_sym, type: :transform, message: 'failed to coerce the data type')
+      else
+        raise Error, "Failed to coerce attribute: #{key}"
       end
     end
 
@@ -223,28 +231,37 @@ module FlightConfiguration
 
       # Ignore configs which are valid or do not implement valid?
       return unless config.respond_to?(:valid?)
-      return if config.valid?
 
-      # Emit a generic warning for class which do not have errors
-      raise Error, <<~ERROR unless config.respond_to?(:errors)
-        Failed to validate the application's configuration
-      ERROR
+      # Raise a generic error if there is no errors object
+      if !config.respond_to?(:errors) && !config.valid?
+        raise Error, <<~ERROR
+          Failed to validate the application's configuration
+        ERROR
+      end
+
+      # Get the current state of the errors and validate
+      current_errors = config.errors.dup
+      return if config.valid? && current_errors.empty?
 
       # Group the errors into their sources
       sources = config.instance_variable_get(:@__sources__) || {}
+      all_errors = [current_errors, config.errors]
       initial = { file: {}, env: [], default: [], missing: [] }
-      sections = config.errors.reduce(initial) do |memo, error|
-        source = sources[error.attribute.to_s]
-        case source&.type
-        when NilClass
-          memo[:missing] << error
-        when :file
-          memo[:file][source.source] ||= []
-          memo[:file][source.source] << error
-        else
-          memo[source.type] << error
+      sections = all_errors.reduce(initial) do |set_memo, errors|
+        errors.reduce(set_memo) do |memo, error|
+          source = sources[error.attribute.to_s]
+          case source&.type
+          when NilClass
+            memo[:missing] << error
+          when :file
+            memo[:file][source.source] ||= []
+            memo[:file][source.source] << error
+          else
+            memo[source.type] << error
+          end
+          memo
         end
-        memo
+        set_memo
       end
 
       # Generate the error message
