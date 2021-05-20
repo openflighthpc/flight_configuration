@@ -134,7 +134,7 @@ module FlightConfiguration
         validate!(config)
       end
     rescue => e
-      raise e, "Cannot load configuration:\n#{e.message}", e.backtrace
+      raise e, "Can not continue as the configuration is invalid:\n#{e.message}", e.backtrace
     end
 
     def merge_sources
@@ -276,7 +276,7 @@ module FlightConfiguration
       end
 
       # Generate the error message
-      msg = "Can not continue as the config is invalid!"
+      msg = ""
 
       # Display generic errors which do not correspond with any attributes
       unless sections[:missing].empty?
@@ -315,7 +315,8 @@ module FlightConfiguration
       end
 
       # Raise the error
-      raise Error, msg
+      # NOTE: The first newline needs to be removed
+      raise Error, msg[1..-1]
     end
   end
 end
