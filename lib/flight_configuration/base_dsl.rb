@@ -44,6 +44,10 @@ module FlightConfiguration
     end
   end
 
+  # Stores a reference to where a particular key came from
+  # NOTE: The type specifies if it came from the :env or :file
+  SourceStruct = Struct.new(:key, :source, :type, :value)
+
   module BaseDSL
     def config_files(*paths)
       @config_files ||= []
@@ -89,7 +93,7 @@ module FlightConfiguration
                   elsif default.is_a? String
                     :to_s
                   elsif default.is_a? Integer
-                    :to_i
+                    ->(int) { Integer(int) }
                   end
 
       # Define the attribute
@@ -101,22 +105,54 @@ module FlightConfiguration
         transform: transform
       }
       attr_accessor name.to_s
+
+      # Define the accessor that returns the original value
+      define_method("_#{name.to_s}") do
+        @__sources__ ||= {}
+        @__sources__[name]&.value
+      end
     end
 
     def load
-      merged = defaults.merge(from_config_files).merge(from_env_vars)
       new.tap do |config|
-        merged.each do |key, value|
+        config.instance_variable_set(:@__sources__, {})
+        merge_sources.each do |key, source|
           required = attributes.fetch(key, {})[:required]
-          if value.nil? && required
+          if source.value.nil? && required
             raise Error, "The required config has not been provided: #{key}"
           else
-            config.send("#{key}=", transform(key, value))
+            config.instance_variable_get(:@__sources__)[key] = source
+            config.send("#{key}=", transform(key, source.value))
           end
         end
       end
     rescue => e
       raise e, "Cannot load configuration:\n#{e.message}", e.backtrace
+    end
+
+    def merge_sources
+      {}.tap do |sources|
+        # Apply the env vars
+        from_env_vars.each do |key, value|
+          sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value)
+        end
+
+        # Apply the configs
+        config_files.reverse.each do |file|
+          hash = from_config_file(file) || {}
+          hash.each do |key, value|
+            next if sources.key?(key)
+            # Ensure the file is a string and not pathname
+            sources[key] = SourceStruct.new(key, file.to_s, :file, value)
+          end
+        end
+
+        # Apply the defaults
+        defaults.each do |key, value|
+          next if sources.key?(key)
+          sources[key] = SourceStruct.new(key, nil, :default, value)
+        end
+      end
     end
 
     def defaults
@@ -147,12 +183,6 @@ module FlightConfiguration
     end
 
     private
-
-    def from_config_files
-      config_files.reduce({}) do |accum, config_file|
-        accum.merge(from_config_file(config_file) || {})
-      end
-    end
 
     def from_env_vars
       envs = attributes.values.reduce({}) do |accum, attr|
