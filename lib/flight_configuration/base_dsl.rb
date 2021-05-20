@@ -29,6 +29,8 @@ require 'pathname'
 require 'yaml'
 
 module FlightConfiguration
+  class Error < StandardError; end
+
   module DeepStringifyKeys
     def self.stringify(object)
       case object
@@ -125,6 +127,9 @@ module FlightConfiguration
             config.send("#{key}=", transform(key, source.value))
           end
         end
+
+        # Attempt to valildate the config
+        validate!(config)
       end
     rescue => e
       raise e, "Cannot load configuration:\n#{e.message}", e.backtrace
@@ -207,6 +212,83 @@ module FlightConfiguration
       else
         value.send(transform)
       end
+    end
+
+    def validate!(config)
+      # Attempt to use the validate! method if the errors struct isn't defined
+      if config.respond_to?(:validate!) && !config.respond_to?(:errors)
+        config.validate!
+        return
+      end
+
+      # Ignore configs which are valid or do not implement valid?
+      return unless config.respond_to?(:valid?)
+      return if config.valid?
+
+      # Emit a generic warning for class which do not have errors
+      raise Error, <<~ERROR unless config.respond_to?(:errors)
+        Failed to validate the application's configuration
+      ERROR
+
+      # Group the errors into their sources
+      sources = config.instance_variable_get(:@__sources__) || {}
+      initial = { file: {}, env: [], default: [], missing: [] }
+      sections = config.errors.reduce(initial) do |memo, error|
+        source = sources[error.attribute.to_s]
+        case source&.type
+        when NilClass
+          memo[:missing] << error
+        when :file
+          memo[:file][source.source] ||= []
+          memo[:file][source.source] << error
+        else
+          memo[source.type] << error
+        end
+        memo
+      end
+
+      # Generate the error message
+      msg = "Can not continue as the config is invalid!"
+
+      # Display generic errors which do not correspond with any attributes
+      unless sections[:missing].empty?
+        msg << "\n\nThe following errors have occurred:"
+        sections[:missing].each do |error|
+          msg << "\n* #{error.full_message}"
+        end
+      end
+
+      # Display the environment variables
+      unless sections[:env].empty?
+        msg << "\n\nThe following environment variable(s) are invalid:"
+        sections[:env].each do |error|
+          env = sources[error.attribute.to_s].source
+          msg << "\n* #{env}: #{error.message}"
+        end
+      end
+
+      # Display errors from a config file
+      config_files.reverse.map(&:to_s).each do |path|
+        next if sections[:file][path].blank?
+        msg << "\n\nThe following config contains invalid attribute(s): #{path}"
+        sections[:file][path].each do |error|
+          msg << "\n* #{error.attribute}: #{error.message}"
+        end
+      end
+
+      # Display errors associated with the defaults
+      # NOTE: *Technically* they could error for any validation reason, but the primary
+      # use case is they are missing. A sensible default can not be provided in all cases,
+      # so instead the user should be prompted to provide them.
+      unless sections[:default].empty?
+        msg << "\n\nThe following required attribute(s) have not been set:"
+        sections[:default].each do |error|
+          msg << "\n* #{error.attribute}"
+        end
+      end
+
+      # Raise the error
+      raise Error, msg
     end
   end
 end
