@@ -229,13 +229,13 @@ module FlightConfiguration
     end
 
     def validate!(config)
-      # Attempt to use the validate! method if the errors struct isn't defined
+      # Attempt to use the validate! method if errors isn't defined
       if config.respond_to?(:validate!) && !config.respond_to?(:errors)
         config.validate!
         return
       end
 
-      # Ignore configs which are valid or do not implement valid?
+      # Ignore configs which do not implement valid?
       return unless config.respond_to?(:valid?)
 
       # Raise a generic error if there is no errors object
@@ -249,21 +249,26 @@ module FlightConfiguration
       current_errors = config.errors.dup
       return if config.valid? && current_errors.empty?
 
-      # Group the errors into their sources
+      # Variable definitions
       sources = config.instance_variable_get(:@__sources__) || {}
-      all_errors = [current_errors, config.errors]
       initial = { file: {}, env: [], default: [], missing: [] }
+      all_errors = [current_errors, config.errors]
+
+      # Group errors into their sources
       sections = all_errors.reduce(initial) do |set_memo, errors|
         errors.reduce(set_memo) do |memo, error|
-          source = sources[error.attribute.to_s]
+          key = error.attribute.to_s.sub(/\A_/, '')
+          source = sources[key]
           case source&.type
           when NilClass
-            memo[:missing] << error
+            memo[:missing] << [key, error]
           when :file
             memo[:file][source.source] ||= []
-            memo[:file][source.source] << error
+            memo[:file][source.source] << [key, error]
+          when :env
+            memo[source.type] << [source.source, error]
           else
-            memo[source.type] << error
+            memo[source.type] << [key, error]
           end
           memo
         end
@@ -276,7 +281,7 @@ module FlightConfiguration
       # Display generic errors which do not correspond with any attributes
       unless sections[:missing].empty?
         msg << "\n\nThe following errors have occurred:"
-        sections[:missing].each do |error|
+        sections[:missing].each do |_, error|
           msg << "\n* #{error.full_message}"
         end
       end
@@ -284,8 +289,7 @@ module FlightConfiguration
       # Display the environment variables
       unless sections[:env].empty?
         msg << "\n\nThe following environment variable(s) are invalid:"
-        sections[:env].each do |error|
-          env = sources[error.attribute.to_s].source
+        sections[:env].each do |env, error|
           msg << "\n* #{env}: #{error.message}"
         end
       end
@@ -294,8 +298,8 @@ module FlightConfiguration
       config_files.reverse.map(&:to_s).each do |path|
         next if sections[:file][path].blank?
         msg << "\n\nThe following config contains invalid attribute(s): #{path}"
-        sections[:file][path].each do |error|
-          msg << "\n* #{error.attribute}: #{error.message}"
+        sections[:file][path].each do |key, error|
+          msg << "\n* #{key}: #{error.message}"
         end
       end
 
@@ -305,7 +309,7 @@ module FlightConfiguration
       # so instead the user should be prompted to provide them.
       unless sections[:default].empty?
         msg << "\n\nThe following required attribute(s) have not been set:"
-        sections[:default].map(&:attribute).uniq.each do |attr|
+        sections[:default].map { |k, _| k }.uniq.each do |attr|
           msg << "\n* #{attr}"
         end
       end
