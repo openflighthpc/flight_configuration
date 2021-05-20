@@ -29,8 +29,6 @@ require 'pathname'
 require 'yaml'
 
 module FlightConfiguration
-  class Error < StandardError; end
-
   module DeepStringifyKeys
     def self.stringify(object)
       case object
@@ -119,11 +117,15 @@ module FlightConfiguration
       new.tap do |config|
         config.instance_variable_set(:@__sources__, {})
         merge_sources.each do |key, source|
+          config.instance_variable_get(:@__sources__)[key] = source
           required = attributes.fetch(key, {})[:required]
           if source.value.nil? && required
-            raise Error, "The required config has not been provided: #{key}"
+            if active_validation?
+              config.errors.add(key, :required, message: 'is required')
+            else
+              raise Error, "The required config has not been provided: #{key}"
+            end
           else
-            config.instance_variable_get(:@__sources__)[key] = source
             config.send("#{key}=", transform(config, key, source.value))
           end
         end
@@ -189,6 +191,10 @@ module FlightConfiguration
 
     private
 
+    def active_validation?
+      @active_validation ||= (self.instance_methods & [:errors, :valid?]).length == 2
+    end
+
     def from_env_vars
       envs = attributes.values.reduce({}) do |accum, attr|
         if attr[:env_var]
@@ -215,7 +221,7 @@ module FlightConfiguration
     rescue
       # NOTE: Ideally the error would be logged, however this can't be done
       #       without forming a recursive loop
-      if config.respond_to?(:errors) && config.respond_to?(:valid?)
+      if active_validation?
         config.errors.add(key.to_sym, type: :transform, message: 'failed to coerce the data type')
       else
         raise Error, "Failed to coerce attribute: #{key}"
@@ -233,7 +239,7 @@ module FlightConfiguration
       return unless config.respond_to?(:valid?)
 
       # Raise a generic error if there is no errors object
-      if !config.respond_to?(:errors) && !config.valid?
+      unless active_validation?
         raise Error, <<~ERROR
           Failed to validate the application's configuration
         ERROR
@@ -299,8 +305,8 @@ module FlightConfiguration
       # so instead the user should be prompted to provide them.
       unless sections[:default].empty?
         msg << "\n\nThe following required attribute(s) have not been set:"
-        sections[:default].each do |error|
-          msg << "\n* #{error.attribute}"
+        sections[:default].map(&:attribute).uniq.each do |attr|
+          msg << "\n* #{attr}"
         end
       end
 
