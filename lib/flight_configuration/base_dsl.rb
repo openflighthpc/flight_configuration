@@ -125,7 +125,7 @@ module FlightConfiguration
             else
               raise Error, "The required config has not been provided: #{key}"
             end
-          else
+          elsif config.respond_to?("#{key}=")
             config.send("#{key}=", transform(config, key, source.value))
           end
         end
