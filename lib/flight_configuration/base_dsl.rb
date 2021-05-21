@@ -120,7 +120,7 @@ module FlightConfiguration
           config.instance_variable_get(:@__sources__)[key] = source
           required = attributes.fetch(key, {})[:required]
           if source.value.nil? && required
-            if active_validation?
+            if active_errors?
               config.errors.add(key, :required, message: 'is required')
             else
               raise Error, "The required config has not been provided: #{key}"
@@ -130,7 +130,7 @@ module FlightConfiguration
           end
         end
 
-        # Attempt to valildate the config
+        # Attempt to validate the config
         validate!(config)
       end
     rescue => e
@@ -191,8 +191,10 @@ module FlightConfiguration
 
     private
 
-    def active_validation?
-      @active_validation ||= (self.instance_methods & [:errors, :valid?]).length == 2
+    # Checks if ActiveValidation/ ActiveErrors can be used
+    # Requires the 'errors' and 'valid?' methods
+    def active_errors?
+      @active_errors ||= (self.instance_methods & [:errors, :valid?]).length == 2
     end
 
     def from_env_vars
@@ -221,7 +223,7 @@ module FlightConfiguration
     rescue
       # NOTE: Ideally the error would be logged, however this can't be done
       #       without forming a recursive loop
-      if active_validation?
+      if active_errors?
         config.errors.add(key.to_sym, type: :transform, message: 'failed to coerce the data type')
       else
         raise Error, "Failed to coerce attribute: #{key}"
@@ -229,22 +231,23 @@ module FlightConfiguration
     end
 
     def validate!(config)
-      # Attempt to use the validate! method if errors isn't defined
-      if config.respond_to?(:validate!) && !config.respond_to?(:errors)
+      # Use active errors instead
+      if active_errors?
+        validate_active_errors!(config)
+
+      # Attempt to use validate! instead
+      elsif config.respond_to?(:validate!)
         config.validate!
-        return
-      end
 
-      # Ignore configs which do not implement valid?
-      return unless config.respond_to?(:valid?)
-
-      # Raise a generic error if there is no errors object
-      unless active_validation?
+      # Otherwise raise a generic error if invalid
+      elsif config.respond_to?(:valid?) && !valid?
         raise Error, <<~ERROR
           Failed to validate the application's configuration
         ERROR
       end
+    end
 
+    def validate_active_errors!(config)
       # Get the current state of the errors and validate
       current_errors = config.errors.dup
       return if config.valid? && current_errors.empty?
@@ -257,7 +260,7 @@ module FlightConfiguration
       # Group errors into their sources
       sections = all_errors.reduce(initial) do |set_memo, errors|
         errors.reduce(set_memo) do |memo, error|
-          key = error.attribute.to_s.sub(/\A_/, '')
+          key = error.attribute.to_s.sub(/\A_/, '') # Standardise the raw methods (_conf => conf)
           source = sources[key]
           case source&.type
           when NilClass
