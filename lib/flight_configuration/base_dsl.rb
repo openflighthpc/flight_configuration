@@ -61,7 +61,6 @@ module FlightConfiguration
       # When extending a class with a *DSL, define the instance methods
       def extended(base)
         base.define_method(:__sources__) { @__sources__ ||= {} }
-        base.define_method(:__reset__) { @__sources__ = {} }
       end
     end
 
@@ -134,7 +133,6 @@ module FlightConfiguration
 
     def load
       new.tap do |config|
-        config.__reset__
         merge_sources.each do |key, source|
           config.__sources__[key] = source
           required = attributes.fetch(key, {})[:required]
