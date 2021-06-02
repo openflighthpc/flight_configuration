@@ -49,6 +49,26 @@ module FlightConfiguration
   SourceStruct = Struct.new(:key, :source, :type, :value)
 
   module BaseDSL
+    # The following propagates the ClassMethods down included modules without
+    # using ActiveSupport::Concerns
+    module ClassMethods
+      # When including the BaseDSL into a new *DSL module, extend the new *DSL
+      # with the original ClassMethods. This propagates the ClassMethods
+      def included(base)
+        base.extend(FlightConfiguration::BaseDSL::ClassMethods)
+      end
+
+      # When extending a class with a *DSL, define the instance methods
+      def extended(base)
+        base.define_method(:__sources__) { @__sources__ ||= {} }
+        base.define_method(:__reset__) { @__sources__ = {} }
+      end
+    end
+
+    # NOTE: The following does not trigger the 'ClassMethods#extended' instance method,
+    #       Instead it defines it as a class method
+    extend ClassMethods
+
     def config_files(*paths)
       @config_files ||= []
       unless paths.empty?
@@ -108,16 +128,15 @@ module FlightConfiguration
 
       # Define the accessor that returns the original value
       define_method("#{name.to_s}_before_type_cast") do
-        @__sources__ ||= {}
-        @__sources__[name]&.value
+        __sources__[name]&.value
       end
     end
 
     def load
       new.tap do |config|
-        config.instance_variable_set(:@__sources__, {})
+        config.__reset__
         merge_sources.each do |key, source|
-          config.instance_variable_get(:@__sources__)[key] = source
+          config.__sources__[key] = source
           required = attributes.fetch(key, {})[:required]
           if source.value.nil? && required
             if active_errors?
@@ -253,7 +272,7 @@ module FlightConfiguration
       return if config.valid? && current_errors.empty?
 
       # Variable definitions
-      sources = config.instance_variable_get(:@__sources__) || {}
+      sources = config.__sources__
       initial = { file: {}, env: [], default: [], missing: [] }
       all_errors = [current_errors, config.errors]
 
