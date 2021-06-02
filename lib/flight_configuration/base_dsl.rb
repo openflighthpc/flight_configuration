@@ -131,10 +131,10 @@ module FlightConfiguration
         end
 
         # Attempt to validate the config
-        validate!(config)
+        validate(config)
       end
     rescue => e
-      raise e, "Can not continue as the configuration is invalid:\n#{e.message}", e.backtrace
+      raise e, "Cannot continue as the configuration is invalid:\n#{e.message}", e.backtrace
     end
 
     def merge_sources
@@ -230,10 +230,10 @@ module FlightConfiguration
       end
     end
 
-    def validate!(config)
+    def validate(config)
       # Use active errors instead
       if active_errors?
-        validate_active_errors!(config)
+        validate_active_errors(config)
 
       # Attempt to use validate! instead
       elsif config.respond_to?(:validate!)
@@ -247,7 +247,7 @@ module FlightConfiguration
       end
     end
 
-    def validate_active_errors!(config)
+    def validate_active_errors(config)
       # Get the current state of the errors and validate
       current_errors = config.errors.dup
       return if config.valid? && current_errors.empty?
