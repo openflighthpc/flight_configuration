@@ -107,7 +107,7 @@ module FlightConfiguration
       attr_accessor name.to_s
 
       # Define the accessor that returns the original value
-      define_method("_#{name.to_s}") do
+      define_method("#{name.to_s}_before_type_cast") do
         @__sources__ ||= {}
         @__sources__[name]&.value
       end
@@ -260,7 +260,10 @@ module FlightConfiguration
       # Group errors into their sources
       sections = all_errors.reduce(initial) do |set_memo, errors|
         errors.reduce(set_memo) do |memo, error|
-          key = error.attribute.to_s.sub(/\A_/, '') # Standardise the raw methods (_conf => conf)
+          # Key standardization may not be required, particularly if using ActiveValidation
+          # However it has been retained due to the loose coupling
+          # Consider removing if hard coupling is introduced
+          key = error.attribute.to_s.sub(/_before_type_cast\Z/, '')
           source = sources[key]
           case source&.type
           when NilClass
