@@ -148,7 +148,7 @@ module FlightConfiguration
         end
 
         # Attempt to validate the config
-        validate(config)
+        validate_config(config)
       end
     rescue => e
       raise e, "Cannot continue as the configuration is invalid:\n#{e.message}", e.backtrace
@@ -247,7 +247,8 @@ module FlightConfiguration
       end
     end
 
-    def validate(config)
+    # The 'validate' method is already used by ActiveValidation, so validate_config is used instead
+    def validate_config(config)
       # Use active errors instead
       if active_errors?
         validate_active_errors(config)
