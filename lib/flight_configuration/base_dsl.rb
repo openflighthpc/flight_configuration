@@ -154,6 +154,22 @@ module FlightConfiguration
       raise e, "Cannot continue as the configuration is invalid:\n#{e.message}", e.backtrace
     end
 
+    def defaults
+      hash = attributes.values.reduce({}) do |accum, attr|
+        key = attr[:name]
+        default = attr[:default]
+        accum[key] = default.respond_to?(:call) ? default.call : default
+        accum
+      end
+      DeepStringifyKeys.stringify(hash)
+    end
+
+    def relative_to(base_path)
+      ->(value) { File.expand_path(value, base_path) }
+    end
+
+    private
+
     def merge_sources
       {}.tap do |sources|
         # Apply the env vars
@@ -179,20 +195,6 @@ module FlightConfiguration
       end
     end
 
-    def defaults
-      hash = attributes.values.reduce({}) do |accum, attr|
-        key = attr[:name]
-        default = attr[:default]
-        accum[key] = default.respond_to?(:call) ? default.call : default
-        accum
-      end
-      DeepStringifyKeys.stringify(hash)
-    end
-
-    def relative_to(base_path)
-      ->(value) { File.expand_path(value, base_path) }
-    end
-
     def from_config_file(config_file)
       return {} unless File.exists?(config_file)
       yaml =
@@ -205,8 +207,6 @@ module FlightConfiguration
         end
       FlightConfiguration::DeepStringifyKeys.stringify(yaml) || {}
     end
-
-    private
 
     # Checks if ActiveValidation/ ActiveErrors can be used
     # Requires the 'errors' and 'valid?' methods
