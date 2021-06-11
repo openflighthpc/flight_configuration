@@ -46,7 +46,7 @@ module FlightConfiguration
 
   # Stores a reference to where a particular key came from
   # NOTE: The type specifies if it came from the :env or :file
-  SourceStruct = Struct.new(:key, :source, :type, :value)
+  SourceStruct = Struct.new(:key, :source, :type, :value, :missing)
 
   module BaseDSL
     # The following propagates the ClassMethods down included modules without
@@ -144,6 +144,8 @@ module FlightConfiguration
             end
           elsif config.respond_to?("#{key}=")
             config.send("#{key}=", transform(config, key, source.value))
+          else
+            source.missing = true
           end
         end
 
@@ -166,6 +168,13 @@ module FlightConfiguration
 
     def relative_to(base_path)
       ->(value) { File.expand_path(value, base_path) }
+    end
+
+    def log_warnings
+      Flight.config.__sources__.each do |key, source|
+        next unless source.missing
+        Flight.logger.warn "Ignoring undefined config '#{key}' (source: #{source.source})"
+      end
     end
 
     private
