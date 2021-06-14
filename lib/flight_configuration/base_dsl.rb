@@ -135,16 +135,20 @@ module FlightConfiguration
       new.tap do |config|
         merge_sources.each do |key, source|
           config.__sources__[key] = source
-          required = attributes.fetch(key, {})[:required]
-          if source.value.nil? && required
-            if active_errors?
-              config.errors.add(key, :required, message: 'is required')
-            else
-              raise Error, "The required config has not been provided: #{key}"
-            end
-          elsif config.respond_to?("#{key}=")
+          if config.respond_to?("#{key}=")
             config.send("#{key}=", transform(config, key, source.value))
+          else
+            source.missing = true
           end
+        end
+
+        # Apply the inbuilt required validator
+        missing = attributes.map { |key, a| (a[:required] && config.send(key).nil?) ? key : nil }
+                            .reject(&:nil?)
+        if missing.any? && active_errors?
+          missing.each { |a| config.errors.add(a, :required, message: 'is required') }
+        elsif missing.any?
+          raise Error, "The required config(s) has not been provided: #{missing.join(',')}"
         end
 
         # Attempt to validate the config
