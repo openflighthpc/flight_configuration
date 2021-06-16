@@ -46,7 +46,7 @@ module FlightConfiguration
 
   # Stores a reference to where a particular key came from
   # NOTE: The type specifies if it came from the :env or :file
-  SourceStruct = Struct.new(:key, :source, :type, :value, :missing)
+  SourceStruct = Struct.new(:key, :source, :type, :value, :unrecognized)
 
   # NOTE: This inheritance hierarchy is becoming unwieldy and follows
   #       a extend/include InstanceMethods anti-pattern
@@ -72,8 +72,8 @@ module FlightConfiguration
         __sources__.each_with_object(logs) do |(key, source), memo|
           # NOTE: Values are not logged in case they are sensitive
           memo[:debug] << "FC: Config '#{key}' was loaded from: #{source.source}"
-          if source.missing
-            memo[:warning] << "FC: Ignoring unrecognised config '#{key}' (source: #{source.source})"
+          if source.unrecognized
+            memo[:warning] << "FC: Ignoring unrecognized config '#{key}' (source: #{source.source})"
           end
         end
 
@@ -186,7 +186,7 @@ module FlightConfiguration
           elsif config.respond_to?("#{key}=")
             config.send("#{key}=", transform(config, key, source.value))
           else
-            source.missing = true
+            source.unrecognized = true
           end
         end
 
