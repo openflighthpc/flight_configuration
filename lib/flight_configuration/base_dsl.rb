@@ -66,14 +66,14 @@ module FlightConfiguration
 
       def __logs__
         # Define the order the logs will appear in
-        logs = { fatal: [], error: [], warn: [], info: [], debug: [] }
+        logs = { warn: [], info: [], debug: [] }
 
         # Apply logs from the __sources__
         __sources__.each_with_object(logs) do |(key, source), memo|
           # NOTE: Values are not logged in case they are sensitive
           memo[:debug] << "FC: Config '#{key}' was loaded from: #{source.source}"
           if source.unrecognized
-            memo[:warning] << "FC: Ignoring unrecognized config '#{key}' (source: #{source.source})"
+            memo[:warn] << "FC: Ignoring unrecognized config '#{key}' (source: #{source.source})"
           end
         end
 
