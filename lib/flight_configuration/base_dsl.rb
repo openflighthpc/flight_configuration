@@ -197,6 +197,9 @@ module FlightConfiguration
       raise e, "Cannot continue as the configuration is invalid:\n#{e.message}", e.backtrace
     end
 
+    # NOTE: Both the logs and inbuilt required mechanism rely on 'defaults'
+    #       containing each key within 'attributes'. Failure to do so may
+    #       lead to nil errors.
     def defaults
       hash = attributes.values.reduce({}) do |accum, attr|
         key = attr[:name]
@@ -215,6 +218,9 @@ module FlightConfiguration
 
     def merge_sources(config)
       config.__sources__.tap do |sources|
+        # Pre-populate the keys to give them a defined order in the logs
+        attributes.each { |key, _| sources[key] = nil }
+
         # Apply the env vars
         from_env_vars.each do |key, value|
           sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value)
@@ -225,7 +231,7 @@ module FlightConfiguration
           config.__files__ << file
           hash = from_config_file(file) || {}
           hash.each do |key, value|
-            next if sources.key?(key)
+            next if sources[key]
             # Ensure the file is a string and not pathname
             sources[key] = SourceStruct.new(key, file.to_s, :file, value)
           end
@@ -233,7 +239,7 @@ module FlightConfiguration
 
         # Apply the defaults
         defaults.each do |key, value|
-          next if sources.key?(key)
+          next if sources[key]
           sources[key] = SourceStruct.new(key, nil, :default, value)
         end
       end
