@@ -71,7 +71,13 @@ module FlightConfiguration
         # Apply logs from the __sources__
         __sources__.each_with_object(logs) do |(key, source), memo|
           # NOTE: Values are not logged in case they are sensitive
-          memo[:debug] << "FC: Config '#{key}' was loaded from: #{source.source}"
+          case source.type
+          when :default
+            memo[:debug] << "FC: Reverting '#{key}' to its default"
+          else
+            memo[:debug] << "FC: Config '#{key}' was loaded from: #{source.source}"
+          end
+
           if source.unrecognized
             memo[:warn] << "FC: Ignoring unrecognized config '#{key}' (source: #{source.source})"
           end
