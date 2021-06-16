@@ -48,25 +48,67 @@ module FlightConfiguration
   # NOTE: The type specifies if it came from the :env or :file
   SourceStruct = Struct.new(:key, :source, :type, :value, :missing)
 
+  # NOTE: This inheritance hierarchy is becoming unwieldy and follows
+  #       a extend/include InstanceMethods anti-pattern
+  #
+  #       Consider porting ActiveSupport::Concerns
   module BaseDSL
-    # The following propagates the ClassMethods down included modules without
+    # NOTE: Because the DSL 'extends' a class, an InstanceMethods module is included
+    #       This is in contrast to the include/extend ClassMethods pattern
+    module InstanceMethods
+      def __sources__
+        @__sources__ ||= {}
+      end
+
+      def __files__
+        @__files__ ||= []
+      end
+
+      def __logs__
+        # Define the order the logs will appear in
+        logs = { fatal: [], error: [], warn: [], info: [], debug: [] }
+
+        # Apply logs from the __sources__
+        __sources__.each_with_object(logs) do |(key, source), memo|
+          # NOTE: Values are not logged in case they are sensitive
+          memo[:debug] << "FC: Config '#{key}' was loaded from: #{source.source}"
+          if source.missing
+            memo[:warning] << "FC: Ignoring unrecognised config '#{key}' (source: #{source.source})"
+          end
+        end
+
+        # Apply logs from the __files__
+        __files__.each do |file|
+          if File.exists? file
+            logs[:info] << "FC: Loaded configuration: #{file}"
+          else
+            logs[:info] << "FC: Skipped configuration: #{file}"
+          end
+        end
+
+        # Remove empty logs, so the application doesn't have to
+        logs.reject { |_, v| v.empty? }.to_h
+      end
+    end
+
+    # The following propagates the DSLClassMethods down included modules without
     # using ActiveSupport::Concerns
-    module ClassMethods
+    module DSLClassMethods
       # When including the BaseDSL into a new *DSL module, extend the new *DSL
       # with the original ClassMethods. This propagates the ClassMethods
       def included(base)
-        base.extend(FlightConfiguration::BaseDSL::ClassMethods)
+        base.extend(FlightConfiguration::BaseDSL::DSLClassMethods)
       end
 
       # When extending a class with a *DSL, define the instance methods
       def extended(base)
-        base.define_method(:__sources__) { @__sources__ ||= {} }
+        base.include FlightConfiguration::BaseDSL::InstanceMethods
       end
     end
 
     # NOTE: The following does not trigger the 'ClassMethods#extended' instance method,
     #       Instead it defines it as a class method
-    extend ClassMethods
+    extend DSLClassMethods
 
     def config_files(*paths)
       @config_files ||= []
@@ -133,8 +175,7 @@ module FlightConfiguration
 
     def load
       new.tap do |config|
-        merge_sources.each do |key, source|
-          config.__sources__[key] = source
+        merge_sources(config).each do |key, source|
           required = attributes.fetch(key, {})[:required]
           if source.value.nil? && required
             if active_errors?
@@ -170,17 +211,10 @@ module FlightConfiguration
       ->(value) { File.expand_path(value, base_path) }
     end
 
-    def log_warnings
-      Flight.config.__sources__.each do |key, source|
-        next unless source.missing
-        Flight.logger.warn "Ignoring undefined config '#{key}' (source: #{source.source})"
-      end
-    end
-
     private
 
-    def merge_sources
-      {}.tap do |sources|
+    def merge_sources(config)
+      config.__sources__.tap do |sources|
         # Apply the env vars
         from_env_vars.each do |key, value|
           sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value)
@@ -188,6 +222,7 @@ module FlightConfiguration
 
         # Apply the configs
         config_files.reverse.each do |file|
+          config.__files__ << file
           hash = from_config_file(file) || {}
           hash.each do |key, value|
             next if sources.key?(key)
