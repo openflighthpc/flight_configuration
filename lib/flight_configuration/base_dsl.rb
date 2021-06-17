@@ -198,22 +198,22 @@ module FlightConfiguration
         # Apply the env vars
         from_env_vars.each do |key, value|
           sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value)
-          config.__logs__.debug "FC: Config '#{key}' loaded from: #{sources[key].source}"
+          config.__logs__.set_from_source(key, sources[key])
         end
 
         # Apply the configs
         config_files.reverse.each do |file|
           hash = from_config_file(file) || {}
           if File.exists?(file)
-            config.__logs__.info "FC: Loaded #{file}"
+            config.__logs__.file_loaded(file)
           else
-            config.__logs__.debug "FC: Not found #{file}"
+            config.__logs__.file_not_found(file)
           end
           hash.each do |key, value|
             next if sources[key]
             # Ensure the file is a string and not pathname
             sources[key] = SourceStruct.new(key, file.to_s, :file, value)
-            config.__logs__.debug "FC: Config '#{key}' loaded from: #{sources[key].source}"
+            config.__logs__.set_from_source(key, sources[key])
           end
         end
 
@@ -221,7 +221,7 @@ module FlightConfiguration
         defaults.each do |key, value|
           next if sources[key]
           sources[key] = SourceStruct.new(key, nil, :default, value)
-          config.__logs__.debug "FC: Config '#{key}' set to default"
+          config.__logs__.set_from_source(key, sources[key])
         end
       end
     end

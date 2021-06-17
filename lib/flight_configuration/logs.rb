@@ -31,6 +31,23 @@ module FlightConfiguration
       @logs = []
     end
 
+    def file_loaded(file)
+      info "Loaded #{file}"
+    end
+
+    def file_not_found(file)
+      debug "Not found #{file}"
+    end
+
+    def set_from_source(key, source)
+      if source.type == :default
+        debug "Config '#{key}' set to default"
+      else
+        type = source.type == :env ? 'env var ' : ''
+        debug "Config '#{key}' loaded from #{type}#{source.source}"
+      end
+    end
+
     def debug(msg)
       @logs << [:debug, msg]
     end
@@ -45,7 +62,7 @@ module FlightConfiguration
 
     def log_with(logger)
       @logs.each do |type, msg|
-        logger.send(type, msg)
+        logger.send(type, "FC: #{msg}")
       end
       @logs.clear
     end
