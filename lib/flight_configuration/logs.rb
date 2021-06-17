@@ -25,13 +25,48 @@
 # https://github.com/openflighthpc/flight_configuration
 #==============================================================================
 
-require "flight_configuration/version"
-require "flight_configuration/deep_stringify_keys"
-require "flight_configuration/logs"
-require "flight_configuration/base_dsl"
-require "flight_configuration/dsl"
-require "flight_configuration/rack_dsl"
-
 module FlightConfiguration
-  class Error < StandardError; end
+  class Logs
+    def initialize
+      @logs = []
+    end
+
+    def file_loaded(file)
+      info "Loaded #{file}"
+    end
+
+    def file_not_found(file)
+      debug "Not found #{file}"
+    end
+
+    def set_from_source(key, source)
+      if source.unrecognized
+        warn "Ignoring unrecognized config '#{key}' (source: #{source.source})"
+      elsif source.type == :default
+        debug "Config '#{key}' set to default"
+      else
+        type = source.type == :env ? 'env var ' : ''
+        debug "Config '#{key}' loaded from #{type}#{source.source}"
+      end
+    end
+
+    def debug(msg)
+      @logs << [:debug, msg]
+    end
+
+    def info(msg)
+      @logs << [:info, msg]
+    end
+
+    def warn(msg)
+      @logs << [:warn, msg]
+    end
+
+    def log_with(logger)
+      @logs.each do |type, msg|
+        logger.send(type, "FC: #{msg}")
+      end
+      @logs.clear
+    end
+  end
 end

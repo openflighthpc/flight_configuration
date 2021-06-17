@@ -46,27 +46,43 @@ module FlightConfiguration
 
   # Stores a reference to where a particular key came from
   # NOTE: The type specifies if it came from the :env or :file
-  SourceStruct = Struct.new(:key, :source, :type, :value)
+  SourceStruct = Struct.new(:key, :source, :type, :value, :unrecognized)
 
+  # NOTE: This inheritance hierarchy is becoming unwieldy and follows
+  #       a extend/include InstanceMethods anti-pattern
+  #
+  #       Consider porting ActiveSupport::Concerns
   module BaseDSL
-    # The following propagates the ClassMethods down included modules without
+    # NOTE: Because the DSL 'extends' a class, an InstanceMethods module is included
+    #       This is in contrast to the include/extend ClassMethods pattern
+    module InstanceMethods
+      def __sources__
+        @__sources__ ||= {}
+      end
+
+      def __logs__
+        @__logs__ ||= Logs.new
+      end
+    end
+
+    # The following propagates the DSLClassMethods down included modules without
     # using ActiveSupport::Concerns
-    module ClassMethods
+    module DSLClassMethods
       # When including the BaseDSL into a new *DSL module, extend the new *DSL
       # with the original ClassMethods. This propagates the ClassMethods
       def included(base)
-        base.extend(FlightConfiguration::BaseDSL::ClassMethods)
+        base.extend(FlightConfiguration::BaseDSL::DSLClassMethods)
       end
 
       # When extending a class with a *DSL, define the instance methods
       def extended(base)
-        base.define_method(:__sources__) { @__sources__ ||= {} }
+        base.include FlightConfiguration::BaseDSL::InstanceMethods
       end
     end
 
     # NOTE: The following does not trigger the 'ClassMethods#extended' instance method,
     #       Instead it defines it as a class method
-    extend ClassMethods
+    extend DSLClassMethods
 
     def config_files(*paths)
       @config_files ||= []
@@ -133,8 +149,7 @@ module FlightConfiguration
 
     def load
       new.tap do |config|
-        merge_sources.each do |key, source|
-          config.__sources__[key] = source
+        merge_sources(config).each do |key, source|
           required = attributes.fetch(key, {})[:required]
           if source.value.nil? && required
             if active_errors?
@@ -144,7 +159,10 @@ module FlightConfiguration
             end
           elsif config.respond_to?("#{key}=")
             config.send("#{key}=", transform(config, key, source.value))
+          else
+            source.unrecognized = true
           end
+          config.__logs__.set_from_source(key, source)
         end
 
         # Attempt to validate the config
@@ -154,31 +172,9 @@ module FlightConfiguration
       raise e, "Cannot continue as the configuration is invalid:\n#{e.message}", e.backtrace
     end
 
-    def merge_sources
-      {}.tap do |sources|
-        # Apply the env vars
-        from_env_vars.each do |key, value|
-          sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value)
-        end
-
-        # Apply the configs
-        config_files.reverse.each do |file|
-          hash = from_config_file(file) || {}
-          hash.each do |key, value|
-            next if sources.key?(key)
-            # Ensure the file is a string and not pathname
-            sources[key] = SourceStruct.new(key, file.to_s, :file, value)
-          end
-        end
-
-        # Apply the defaults
-        defaults.each do |key, value|
-          next if sources.key?(key)
-          sources[key] = SourceStruct.new(key, nil, :default, value)
-        end
-      end
-    end
-
+    # NOTE: Both the logs and inbuilt required mechanism rely on 'defaults'
+    #       containing each key within 'attributes'. Failure to do so may
+    #       lead to nil errors.
     def defaults
       hash = attributes.values.reduce({}) do |accum, attr|
         key = attr[:name]
@@ -193,6 +189,41 @@ module FlightConfiguration
       ->(value) { File.expand_path(value, base_path) }
     end
 
+    private
+
+    def merge_sources(config)
+      config.__sources__.tap do |sources|
+        # Pre-populate the keys to give them a defined order in the logs
+        attributes.each { |key, _| sources[key] = nil }
+
+        # Apply the env vars
+        from_env_vars.each do |key, value|
+          sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value)
+        end
+
+        # Apply the configs
+        config_files.reverse.each do |file|
+          hash = from_config_file(file) || {}
+          if File.exists?(file)
+            config.__logs__.file_loaded(file)
+          else
+            config.__logs__.file_not_found(file)
+          end
+          hash.each do |key, value|
+            next if sources[key]
+            # Ensure the file is a string and not pathname
+            sources[key] = SourceStruct.new(key, file.to_s, :file, value)
+          end
+        end
+
+        # Apply the defaults
+        defaults.each do |key, value|
+          next if sources[key]
+          sources[key] = SourceStruct.new(key, nil, :default, value)
+        end
+      end
+    end
+
     def from_config_file(config_file)
       return {} unless File.exists?(config_file)
       yaml =
@@ -205,8 +236,6 @@ module FlightConfiguration
         end
       FlightConfiguration::DeepStringifyKeys.stringify(yaml) || {}
     end
-
-    private
 
     # Checks if ActiveValidation/ ActiveErrors can be used
     # Requires the 'errors' and 'valid?' methods
