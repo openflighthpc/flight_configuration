@@ -162,6 +162,7 @@ module FlightConfiguration
           else
             source.unrecognized = true
           end
+          config.__logs__.set_from_source(key, source)
         end
 
         # Attempt to validate the config
@@ -198,7 +199,6 @@ module FlightConfiguration
         # Apply the env vars
         from_env_vars.each do |key, value|
           sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value)
-          config.__logs__.set_from_source(key, sources[key])
         end
 
         # Apply the configs
@@ -213,7 +213,6 @@ module FlightConfiguration
             next if sources[key]
             # Ensure the file is a string and not pathname
             sources[key] = SourceStruct.new(key, file.to_s, :file, value)
-            config.__logs__.set_from_source(key, sources[key])
           end
         end
 
@@ -221,7 +220,6 @@ module FlightConfiguration
         defaults.each do |key, value|
           next if sources[key]
           sources[key] = SourceStruct.new(key, nil, :default, value)
-          config.__logs__.set_from_source(key, sources[key])
         end
       end
     end
