@@ -60,40 +60,8 @@ module FlightConfiguration
         @__sources__ ||= {}
       end
 
-      def __files__
-        @__files__ ||= []
-      end
-
       def __logs__
-        # Define the order the logs will appear in
-        logs = { warn: [], info: [], debug: [] }
-
-        # Apply logs from the __sources__
-        __sources__.each_with_object(logs) do |(key, source), memo|
-          # NOTE: Values are not logged in case they are sensitive
-          case source.type
-          when :default
-            memo[:debug] << "FC: Reverting '#{key}' to its default"
-          else
-            memo[:debug] << "FC: Config '#{key}' was loaded from: #{source.source}"
-          end
-
-          if source.unrecognized
-            memo[:warn] << "FC: Ignoring unrecognized config '#{key}' (source: #{source.source})"
-          end
-        end
-
-        # Apply logs from the __files__
-        __files__.each do |file|
-          if File.exists? file
-            logs[:info] << "FC: Loaded configuration: #{file}"
-          else
-            logs[:info] << "FC: Skipped configuration: #{file}"
-          end
-        end
-
-        # Remove empty logs, so the application doesn't have to
-        logs.reject { |_, v| v.empty? }.to_h
+        @__logs__ ||= Logs.new
       end
     end
 
@@ -230,16 +198,22 @@ module FlightConfiguration
         # Apply the env vars
         from_env_vars.each do |key, value|
           sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value)
+          config.__logs__.debug "FC: Config '#{key}' loaded from: #{sources[key].source}"
         end
 
         # Apply the configs
         config_files.reverse.each do |file|
-          config.__files__ << file
           hash = from_config_file(file) || {}
+          if File.exists?(file)
+            config.__logs__.info "FC: Loaded #{file}"
+          else
+            config.__logs__.debug "FC: Not found #{file}"
+          end
           hash.each do |key, value|
             next if sources[key]
             # Ensure the file is a string and not pathname
             sources[key] = SourceStruct.new(key, file.to_s, :file, value)
+            config.__logs__.debug "FC: Config '#{key}' loaded from: #{sources[key].source}"
           end
         end
 
@@ -247,6 +221,7 @@ module FlightConfiguration
         defaults.each do |key, value|
           next if sources[key]
           sources[key] = SourceStruct.new(key, nil, :default, value)
+          config.__logs__.debug "FC: Config '#{key}' set to default"
         end
       end
     end

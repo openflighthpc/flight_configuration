@@ -25,13 +25,19 @@
 # https://github.com/openflighthpc/flight_configuration
 #==============================================================================
 
-require "flight_configuration/version"
-require "flight_configuration/deep_stringify_keys"
-require "flight_configuration/logs"
-require "flight_configuration/base_dsl"
-require "flight_configuration/dsl"
-require "flight_configuration/rack_dsl"
-
 module FlightConfiguration
-  class Error < StandardError; end
+  module DeepStringifyKeys
+    def self.stringify(object)
+      case object
+      when Hash
+        object.each_with_object(object.class.new) do |(key, value), memo|
+          memo[key.to_s] = self.stringify(value)
+        end
+      when Array
+        object.map { |v| self.stringify(v) }
+      else
+        object
+      end
+    end
+  end
 end
