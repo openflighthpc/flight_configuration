@@ -30,8 +30,9 @@ require "flight_configuration/deep_stringify_keys"
 require "flight_configuration/logs"
 require "flight_configuration/base_dsl"
 require "flight_configuration/dsl"
-require "flight_configuration/source_struct"
 require "flight_configuration/rack_dsl"
+require "flight_configuration/rich_active_validation_error_message"
+require "flight_configuration/source_struct"
 
 module FlightConfiguration
   class Error < StandardError; end

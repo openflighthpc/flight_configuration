@@ -162,7 +162,16 @@ module FlightConfiguration
     end
 
     def load
-      build.tap(&:validate!)
+      build.tap do |config|
+        if active_validation?
+          unless config.valid?
+            klass = FlightConfiguration::RichActiveValidationErrorMessage
+            raise Error, klass.rich_error_message(config)
+          end
+        else
+          config.validate!
+        end
+      end
     end
 
     # NOTE: Both the logs and inbuilt required mechanism rely on 'defaults'
@@ -276,84 +285,6 @@ module FlightConfiguration
         accum
       end
       DeepStringifyKeys.stringify(envs)
-    end
-
-    def validate_active_errors(config)
-      # Get the current state of the errors and validate
-      current_errors = config.errors.dup
-      return if config.valid? && current_errors.empty?
-
-      # Variable definitions
-      sources = config.__sources__
-      initial = { file: {}, env: [], default: [], missing: [] }
-      all_errors = [current_errors, config.errors]
-
-      # Group errors into their sources
-      sections = all_errors.reduce(initial) do |set_memo, errors|
-        errors.reduce(set_memo) do |memo, error|
-          # Key standardization may not be required, particularly if using ActiveValidation
-          # However it has been retained due to the loose coupling
-          # Consider removing if hard coupling is introduced
-          key = error.attribute.to_s.sub(/_before_type_cast\Z/, '')
-          source = sources[key]
-          case source&.type
-          when NilClass
-            memo[:missing] << [key, error]
-          when :file
-            memo[:file][source.source] ||= []
-            memo[:file][source.source] << [key, error]
-          when :env
-            memo[source.type] << [source.source, error]
-          else
-            memo[source.type] << [key, error]
-          end
-          memo
-        end
-        set_memo
-      end
-
-      # Generate the error message
-      msg = ""
-
-      # Display generic errors which do not correspond with any attributes
-      unless sections[:missing].empty?
-        msg << "\n\nThe following errors have occurred:"
-        sections[:missing].each do |_, error|
-          msg << "\n* #{error.full_message}"
-        end
-      end
-
-      # Display the environment variables
-      unless sections[:env].empty?
-        msg << "\n\nThe following environment variable(s) are invalid:"
-        sections[:env].each do |env, error|
-          msg << "\n* #{env}: #{error.message}"
-        end
-      end
-
-      # Display errors from a config file
-      config_files.reverse.map(&:to_s).each do |path|
-        next if sections[:file][path].blank?
-        msg << "\n\nThe following config contains invalid attribute(s): #{path}"
-        sections[:file][path].each do |key, error|
-          msg << "\n* #{key}: #{error.message}"
-        end
-      end
-
-      # Display errors associated with the defaults
-      # NOTE: *Technically* they could error for any validation reason, but the primary
-      # use case is they are missing. A sensible default can not be provided in all cases,
-      # so instead the user should be prompted to provide them.
-      unless sections[:default].empty?
-        msg << "\n\nThe following required attribute(s) have not been set:"
-        sections[:default].map { |k, _| k }.uniq.each do |attr|
-          msg << "\n* #{attr}"
-        end
-      end
-
-      # Raise the error
-      # NOTE: The first newline needs to be removed
-      raise Error, msg[1..-1]
     end
   end
 end
