@@ -198,6 +198,11 @@ module FlightConfiguration
       define_method("#{name.to_s}_before_type_cast") do
         __sources__[name]&.value
       end
+
+      # Defines the default ActiveValidation validators (when applicable)
+      if active_validation?
+        validates(name, presence: true) if required
+      end
     end
 
     def build
@@ -261,6 +266,13 @@ module FlightConfiguration
 
     private
 
+    def active_validation?
+      return @active_validation unless @active_validation.nil?
+      @active_validation = ancestors.find do |klass|
+        klass.to_s == 'ActiveModel::Validations'
+      end
+    end
+
     def merge_sources(config)
       config.__sources__.tap do |sources|
         # Pre-populate the keys to give them a defined order in the logs
@@ -305,12 +317,6 @@ module FlightConfiguration
             "Error: #{$!.message}"
         end
       FlightConfiguration::DeepStringifyKeys.stringify(yaml) || {}
-    end
-
-    # Checks if ActiveValidation/ ActiveErrors can be used
-    # Requires the 'errors' and 'valid?' methods
-    def active_errors?
-      @active_errors ||= (self.instance_methods & [:errors, :valid?]).length == 2
     end
 
     def from_env_vars
