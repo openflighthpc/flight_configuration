@@ -30,9 +30,12 @@ module FlightConfiguration
     def self.validate(config)
       errors = []
       config.__sources__.each do |_, source|
-        next unless source.attribute[:required]
-        next unless source.value.nil?
-        errors << [:missing, source.key]
+        if source.attribute[:required] && source.value.nil?
+          errors << [:missing, source.key]
+        end
+        unless source.transformable?
+          errors << [:transform, source.key]
+        end
       end
       errors << :invalid if config.respond_to?(:valid?) && !config.valid?
       return errors
@@ -45,6 +48,8 @@ module FlightConfiguration
         case type
         when :missing
           "The required config '#{args.first}' is missing!"
+        when :transform
+          "Failed to coerce attribute '#{args.first}'!"
         else
           type.to_s # NOTE: This should not be used in practice
         end

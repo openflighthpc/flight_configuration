@@ -99,7 +99,7 @@ module FlightConfiguration
     end
 
     def rich_error_message
-      FlightConfiguration::RichActiveValidationError.rich_error_message(self)
+      FlightConfiguration::RichActiveValidationErrorMessage.rich_error_message(self)
     end
   end
 end

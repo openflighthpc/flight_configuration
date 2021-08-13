@@ -54,13 +54,8 @@ module FlightConfiguration
         value.send(transform)
       end
     rescue
-      # # NOTE: Ideally the error would be logged, however this can't be done
-      # #       without forming a recursive loop
-      # if active_errors?
-      #   config.errors.add(key.to_sym, type: :transform, message: 'failed to coerce the data type')
-      # else
-      #   raise Error, "Failed to coerce attribute: #{key}"
-      # end
+      config.__logs__.error("Failed to coerce attribute: #{key}")
+      config.__logs__.debug $!.full_message
       @transformable = false
     end
   end

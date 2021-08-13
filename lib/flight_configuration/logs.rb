@@ -62,6 +62,10 @@ module FlightConfiguration
       @logs << [:warn, msg]
     end
 
+    def error(msg)
+      @logs << [:error, msg]
+    end
+
     def log_with(logger)
       @logs.each do |type, msg|
         logger.send(type, "FC: #{msg}")
