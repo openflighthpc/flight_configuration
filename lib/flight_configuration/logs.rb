@@ -40,13 +40,13 @@ module FlightConfiguration
     end
 
     def set_from_source(key, source)
-      if source.unrecognized
-        warn "Ignoring unrecognized config '#{key}' (source: #{source.source})"
-      elsif source.type == :default
+      if source.type == :default
         debug "Config '#{key}' set to default"
-      else
+      elsif source.recognized?
         type = source.type == :env ? 'env var ' : ''
         debug "Config '#{key}' loaded from #{type}#{source.source}"
+      else
+        warn "Ignoring unrecognized config '#{key}' (source: #{source.source})"
       end
     end
 

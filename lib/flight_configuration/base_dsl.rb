@@ -46,7 +46,42 @@ module FlightConfiguration
 
   # Stores a reference to where a particular key came from
   # NOTE: The type specifies if it came from the :env or :file
-  SourceStruct = Struct.new(:key, :source, :type, :value, :unrecognized)
+  SourceStruct = Struct.new(:key, :source, :type, :value, :config) do
+    def attribute
+      @attribute ||= config.class.attributes[key] || {}
+    end
+
+    def transformable?
+      transformed_value if @transformable.nil?
+      @transformable
+    end
+
+    def recognized?
+      !attribute.empty?
+    end
+
+    def transformed_value
+      return @transformed_value unless @transformable.nil?
+      @transformable = true
+      transform = attribute[:transform]
+      @transformed_value = if transform.nil?
+        value
+      elsif transform.respond_to?(:call)
+        transform.call(value)
+      else
+        value.send(transform)
+      end
+    rescue
+      # # NOTE: Ideally the error would be logged, however this can't be done
+      # #       without forming a recursive loop
+      # if active_errors?
+      #   config.errors.add(key.to_sym, type: :transform, message: 'failed to coerce the data type')
+      # else
+      #   raise Error, "Failed to coerce attribute: #{key}"
+      # end
+      @transformable = false
+    end
+  end
 
   # NOTE: This inheritance hierarchy is becoming unwieldy and follows
   #       a extend/include InstanceMethods anti-pattern
@@ -62,6 +97,24 @@ module FlightConfiguration
 
       def __logs__
         @__logs__ ||= Logs.new
+      end
+
+      def respond_to_missing?(method, *args)
+        return true if [:validate, :validate!].include? method
+        super
+      end
+
+      # Support the validate/validate! methods without defining them
+      # This allows ActiveValidation to redefine it
+      def method_missing(method, *args)
+        case method
+        when :validate
+          self.class.validate_fallback(self)
+        when :validate!
+          self.class.validate_fallback!(self)
+        else
+          super
+        end
       end
     end
 
@@ -147,29 +200,18 @@ module FlightConfiguration
       end
     end
 
-    def load
+    def build
       new.tap do |config|
+        # Set the attributes
         merge_sources(config).each do |key, source|
-          required = attributes.fetch(key, {})[:required]
-          if source.value.nil? && required
-            if active_errors?
-              config.errors.add(key, :required, message: 'is required')
-            else
-              raise Error, "The required config has not been provided: #{key}"
-            end
-          elsif config.respond_to?("#{key}=")
-            config.send("#{key}=", transform(config, key, source.value))
-          else
-            source.unrecognized = true
-          end
+          config.send("#{key}=", source.transformed_value) if source.recognized?
           config.__logs__.set_from_source(key, source)
         end
-
-        # Attempt to validate the config
-        validate_config(config)
       end
-    rescue => e
-      raise e, "Cannot continue as the configuration is invalid:\n#{e.message}", e.backtrace
+    end
+
+    def load
+      build.tap(&:validate!)
     end
 
     # NOTE: Both the logs and inbuilt required mechanism rely on 'defaults'
@@ -189,6 +231,34 @@ module FlightConfiguration
       ->(value) { File.expand_path(value, base_path) }
     end
 
+    def validate_fallback(config)
+      errors = []
+      config.__sources__.each do |_, source|
+        next unless source.attribute[:required]
+        next unless source.value.nil?
+        errors << [:missing, source.key]
+      end
+      errors << :invalid if config.respond_to?(:valid?) && !config.valid?
+      return errors
+    end
+
+    def validate_fallback!(config)
+      errors = validate_fallback(config)
+      return if errors.empty?
+      strings = errors.map do |type, *args|
+        case type
+        when :missing
+          "The required config '#{args.first}' is missing!"
+        else
+          type.to_s # NOTE: This should not be used in practice
+        end
+      end
+      raise Error, <<~ERROR.chomp
+        Can not continue as the following errors occurred when validating the config:
+        #{strings.map { |s| " * #{s}" }.join("\n")}
+      ERROR
+    end
+
     private
 
     def merge_sources(config)
@@ -198,7 +268,7 @@ module FlightConfiguration
 
         # Apply the env vars
         from_env_vars.each do |key, value|
-          sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value)
+          sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value, config)
         end
 
         # Apply the configs
@@ -212,14 +282,14 @@ module FlightConfiguration
           hash.each do |key, value|
             next if sources[key]
             # Ensure the file is a string and not pathname
-            sources[key] = SourceStruct.new(key, file.to_s, :file, value)
+            sources[key] = SourceStruct.new(key, file.to_s, :file, value, config)
           end
         end
 
         # Apply the defaults
         defaults.each do |key, value|
           next if sources[key]
-          sources[key] = SourceStruct.new(key, nil, :default, value)
+          sources[key] = SourceStruct.new(key, nil, :default, value, config)
         end
       end
     end
@@ -254,44 +324,6 @@ module FlightConfiguration
         accum
       end
       DeepStringifyKeys.stringify(envs)
-    end
-
-    def transform(config, key, value)
-      config_definition = attributes.fetch(key.to_s, {})
-      transform = config_definition[:transform]
-      if transform.nil?
-        value
-      elsif transform.respond_to?(:call)
-        transform.call(value)
-      else
-        value.send(transform)
-      end
-    rescue
-      # NOTE: Ideally the error would be logged, however this can't be done
-      #       without forming a recursive loop
-      if active_errors?
-        config.errors.add(key.to_sym, type: :transform, message: 'failed to coerce the data type')
-      else
-        raise Error, "Failed to coerce attribute: #{key}"
-      end
-    end
-
-    # The 'validate' method is already used by ActiveValidation, so validate_config is used instead
-    def validate_config(config)
-      # Use active errors instead
-      if active_errors?
-        validate_active_errors(config)
-
-      # Attempt to use validate! instead
-      elsif config.respond_to?(:validate!)
-        config.validate!
-
-      # Otherwise raise a generic error if invalid
-      elsif config.respond_to?(:valid?) && !valid?
-        raise Error, <<~ERROR
-          Failed to validate the application's configuration
-        ERROR
-      end
     end
 
     def validate_active_errors(config)
