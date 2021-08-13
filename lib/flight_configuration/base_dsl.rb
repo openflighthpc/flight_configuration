@@ -55,9 +55,9 @@ module FlightConfiguration
       def method_missing(method, *args)
         case method
         when :validate
-          self.class.validate_fallback(self)
+          FallbackValidator.validate(self)
         when :validate!
-          self.class.validate_fallback!(self)
+          FallbackValidator.validate!(self)
         else
           super
         end
@@ -165,8 +165,8 @@ module FlightConfiguration
       build.tap do |config|
         if active_validation?
           unless config.valid?
-            klass = FlightConfiguration::RichActiveValidationErrorMessage
-            raise Error, klass.rich_error_message(config)
+            msg = RichActiveValidationErrorMessage.rich_error_message(config)
+            raise Error, msg
           end
         else
           config.validate!
@@ -189,34 +189,6 @@ module FlightConfiguration
 
     def relative_to(base_path)
       ->(value) { File.expand_path(value, base_path) }
-    end
-
-    def validate_fallback(config)
-      errors = []
-      config.__sources__.each do |_, source|
-        next unless source.attribute[:required]
-        next unless source.value.nil?
-        errors << [:missing, source.key]
-      end
-      errors << :invalid if config.respond_to?(:valid?) && !config.valid?
-      return errors
-    end
-
-    def validate_fallback!(config)
-      errors = validate_fallback(config)
-      return if errors.empty?
-      strings = errors.map do |type, *args|
-        case type
-        when :missing
-          "The required config '#{args.first}' is missing!"
-        else
-          type.to_s # NOTE: This should not be used in practice
-        end
-      end
-      raise Error, <<~ERROR.chomp
-        Can not continue as the following errors occurred when validating the config:
-        #{strings.map { |s| " * #{s}" }.join("\n")}
-      ERROR
     end
 
     private

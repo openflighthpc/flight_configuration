@@ -25,16 +25,34 @@
 # https://github.com/openflighthpc/flight_configuration
 #==============================================================================
 
-require "flight_configuration/version"
-require "flight_configuration/deep_stringify_keys"
-require 'flight_configuration/fallback_validator'
-require "flight_configuration/logs"
-require "flight_configuration/base_dsl"
-require "flight_configuration/dsl"
-require "flight_configuration/rack_dsl"
-require "flight_configuration/rich_active_validation_error_message"
-require "flight_configuration/source_struct"
-
 module FlightConfiguration
-  class Error < StandardError; end
+  module FallbackValidator
+    def self.validate(config)
+      errors = []
+      config.__sources__.each do |_, source|
+        next unless source.attribute[:required]
+        next unless source.value.nil?
+        errors << [:missing, source.key]
+      end
+      errors << :invalid if config.respond_to?(:valid?) && !config.valid?
+      return errors
+    end
+
+    def self.validate!(config)
+      errors = validate(config)
+      return if errors.empty?
+      strings = errors.map do |type, *args|
+        case type
+        when :missing
+          "The required config '#{args.first}' is missing!"
+        else
+          type.to_s # NOTE: This should not be used in practice
+        end
+      end
+      raise Error, <<~ERROR.chomp
+        Can not continue as the following errors occurred when validating the config:
+        #{strings.map { |s| " * #{s}" }.join("\n")}
+      ERROR
+    end
+  end
 end
