@@ -29,60 +29,6 @@ require 'pathname'
 require 'yaml'
 
 module FlightConfiguration
-  module DeepStringifyKeys
-    def self.stringify(object)
-      case object
-      when Hash
-        object.each_with_object(object.class.new) do |(key, value), memo|
-          memo[key.to_s] = self.stringify(value)
-        end
-      when Array
-        object.map { |v| self.stringify(v) }
-      else
-        object
-      end
-    end
-  end
-
-  # Stores a reference to where a particular key came from
-  # NOTE: The type specifies if it came from the :env or :file
-  SourceStruct = Struct.new(:key, :source, :type, :value, :config) do
-    def attribute
-      @attribute ||= config.class.attributes[key] || {}
-    end
-
-    def transformable?
-      transformed_value if @transformable.nil?
-      @transformable
-    end
-
-    def recognized?
-      !attribute.empty?
-    end
-
-    def transformed_value
-      return @transformed_value unless @transformable.nil?
-      @transformable = true
-      transform = attribute[:transform]
-      @transformed_value = if transform.nil?
-        value
-      elsif transform.respond_to?(:call)
-        transform.call(value)
-      else
-        value.send(transform)
-      end
-    rescue
-      # # NOTE: Ideally the error would be logged, however this can't be done
-      # #       without forming a recursive loop
-      # if active_errors?
-      #   config.errors.add(key.to_sym, type: :transform, message: 'failed to coerce the data type')
-      # else
-      #   raise Error, "Failed to coerce attribute: #{key}"
-      # end
-      @transformable = false
-    end
-  end
-
   # NOTE: This inheritance hierarchy is becoming unwieldy and follows
   #       a extend/include InstanceMethods anti-pattern
   #
