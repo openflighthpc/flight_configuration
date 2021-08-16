@@ -33,7 +33,7 @@ module FlightConfiguration
         if source.attribute[:required] && source.value.nil?
           errors << [:missing, source.key]
         end
-        unless source.transformable?
+        unless source.transform_valid?
           errors << [:transform, source.key]
         end
       end

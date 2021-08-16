@@ -149,7 +149,7 @@ module FlightConfiguration
       if active_validation?
         validates(name, presence: true) if required
         validate do
-          next if __sources__[name].transformable?
+          next if __sources__[name].transform_valid?
           @errors.add name, type: :transform,
             message: 'failed to coerce the data type'
         end

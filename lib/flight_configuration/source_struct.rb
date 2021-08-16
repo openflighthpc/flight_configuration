@@ -33,9 +33,9 @@ module FlightConfiguration
       @attribute ||= config.class.attributes[key] || {}
     end
 
-    def transformable?
-      transformed_value if @transformable.nil?
-      @transformable
+    def transform_valid?
+      transformed_value unless defined?(@transform_valid)
+      @transform_valid
     end
 
     def recognized?
@@ -43,8 +43,10 @@ module FlightConfiguration
     end
 
     def transformed_value
-      return @transformed_value unless @transformable.nil?
-      @transformable = true
+      if defined?(@transformed_value)
+        return @transformed_value
+      end
+
       transform = attribute[:transform]
       @transformed_value = if transform.nil?
         value
@@ -56,7 +58,11 @@ module FlightConfiguration
     rescue
       config.__logs__.error("Failed to coerce attribute: #{key}")
       config.__logs__.debug $!.full_message
-      @transformable = false
+      @transform_valid = false
+      nil
+    else
+      @transform_valid = true
+      @transformed_value
     end
   end
 end
