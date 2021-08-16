@@ -142,12 +142,12 @@ module FlightConfiguration
 
       # Define the accessor that returns the original value
       define_method("#{name.to_s}_before_type_cast") do
-        __sources__[name]&.value
+        __sources__[name]&.value_before_type_cast
       end
 
       # Defines the default ActiveValidation validators (when applicable)
       if active_validation?
-        validates(name, presence: true) if required
+        validates(name, presence: true, allow_blank: true) if required
         validate do
           next if __sources__[name].transform_valid?
           @errors.add name, type: :transform,
@@ -160,7 +160,7 @@ module FlightConfiguration
       new.tap do |config|
         # Set the attributes
         merge_sources(config).each do |key, source|
-          config.send("#{key}=", source.transformed_value) if source.recognized?
+          config.send("#{key}=", source.value) if source.recognized?
           config.__logs__.set_from_source(key, source)
         end
       end
@@ -177,19 +177,6 @@ module FlightConfiguration
           config.validate!
         end
       end
-    end
-
-    # NOTE: Both the logs and inbuilt required mechanism rely on 'defaults'
-    #       containing each key within 'attributes'. Failure to do so may
-    #       lead to nil errors.
-    def defaults
-      hash = attributes.values.reduce({}) do |accum, attr|
-        key = attr[:name]
-        default = attr[:default]
-        accum[key] = default.respond_to?(:call) ? default.call : default
-        accum
-      end
-      DeepStringifyKeys.stringify(hash)
     end
 
     def relative_to(base_path)
@@ -231,9 +218,10 @@ module FlightConfiguration
         end
 
         # Apply the defaults
-        defaults.each do |key, value|
+        attributes.values.each do |attr|
+          key = attr[:name].to_s
           next if sources[key]
-          sources[key] = SourceStruct.new(key, nil, :default, value, config)
+          sources[key] = SourceStruct.new(key, nil, :default, attr[:default], config)
         end
       end
     end

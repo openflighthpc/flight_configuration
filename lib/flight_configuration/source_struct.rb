@@ -27,14 +27,25 @@
 
 module FlightConfiguration
   # Stores a reference to where a particular key came from
-  # NOTE: The type specifies if it came from the :env or :file
-  SourceStruct = Struct.new(:key, :source, :type, :value, :config) do
+  #
+  # The type specifies if it came from the :env, :file or the :default.
+  class SourceStruct
+    attr_reader :key, :source, :type
+
+    def initialize(key, source, type, value_before_type_cast, config)
+      @key = key
+      @source = source
+      @type = type
+      @value_before_type_cast = value_before_type_cast
+      @config = config
+    end
+
     def attribute
-      @attribute ||= config.class.attributes[key] || {}
+      @attribute ||= @config.class.attributes[key] || {}
     end
 
     def transform_valid?
-      transformed_value unless defined?(@transform_valid)
+      value unless defined?(@transform_valid)
       @transform_valid
     end
 
@@ -42,27 +53,40 @@ module FlightConfiguration
       !attribute.empty?
     end
 
-    def transformed_value
-      if defined?(@transformed_value)
-        return @transformed_value
+    def value
+      if defined?(@value)
+        return @value
       end
 
       transform = attribute[:transform]
-      @transformed_value = if transform.nil?
-        value
+      @value = if transform.nil?
+        value_before_type_cast
       elsif transform.respond_to?(:call)
-        transform.call(value)
+        transform.call(value_before_type_cast)
       else
-        value.send(transform)
+        value_before_type_cast.send(transform)
       end
-    rescue
-      config.__logs__.error("Failed to coerce attribute: #{key}")
-      config.__logs__.debug $!.full_message
+    rescue => e
+      @config.__logs__.error("Failed to coerce attribute: #{key}") { e.full_message }
       @transform_valid = false
       nil
     else
       @transform_valid = true
-      @transformed_value
+      @value
+    end
+
+    def value_before_type_cast
+      return @value_before_type_cast unless type == :default && !@default_set
+
+      @default_set = true
+      default = attribute[:default]
+      @value_before_type_cast = if default.respond_to?(:call) && default.arity == 0
+        default.call
+      elsif default.respond_to?(:call)
+        default.call(@config)
+      else
+        default
+      end
     end
   end
 end
