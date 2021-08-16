@@ -147,7 +147,7 @@ module FlightConfiguration
 
       # Defines the default ActiveValidation validators (when applicable)
       if active_validation?
-        validates(name, presence: true) if required
+        validates(name, presence: true, allow_blank: true) if required
         validate do
           next if __sources__[name].transform_valid?
           @errors.add name, type: :transform,
