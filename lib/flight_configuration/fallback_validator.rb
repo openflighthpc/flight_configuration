@@ -26,51 +26,38 @@
 #==============================================================================
 
 module FlightConfiguration
-  class Logs
-    def initialize
-      @logs = []
-    end
-
-    def file_loaded(file)
-      info "Loaded #{file}"
-    end
-
-    def file_not_found(file)
-      debug "Not found #{file}"
-    end
-
-    def set_from_source(key, source)
-      if source.type == :default
-        debug "Config '#{key}' set to default"
-      elsif source.recognized?
-        type = source.type == :env ? 'env var ' : ''
-        debug "Config '#{key}' loaded from #{type}#{source.source}"
-      else
-        warn "Ignoring unrecognized config '#{key}' (source: #{source.source})"
+  module FallbackValidator
+    def self.validate(config)
+      errors = []
+      config.__sources__.each do |_, source|
+        if source.attribute[:required] && source.value.nil?
+          errors << [:missing, source.key]
+        end
+        unless source.transform_valid?
+          errors << [:transform, source.key]
+        end
       end
+      errors << :invalid if config.respond_to?(:valid?) && !config.valid?
+      return errors
     end
 
-    def debug(msg)
-      @logs << [:debug, msg]
-    end
-
-    def info(msg)
-      @logs << [:info, msg]
-    end
-
-    def warn(msg)
-      @logs << [:warn, msg]
-    end
-
-    def error(msg)
-      @logs << [:error, msg]
-    end
-
-    def log_with(logger)
-      @logs.each do |type, msg|
-        logger.send(type, "FC: #{msg}")
+    def self.validate!(config)
+      errors = validate(config)
+      return if errors.empty?
+      strings = errors.map do |type, *args|
+        case type
+        when :missing
+          "The required config '#{args.first}' is missing!"
+        when :transform
+          "Failed to coerce attribute '#{args.first}'!"
+        else
+          type.to_s # NOTE: This should not be used in practice
+        end
       end
-      @logs.clear
+      raise Error, <<~ERROR.chomp
+        Can not continue as the following errors occurred when validating the config:
+        #{strings.map { |s| " * #{s}" }.join("\n")}
+      ERROR
     end
   end
 end

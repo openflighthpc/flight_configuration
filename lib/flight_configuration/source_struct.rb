@@ -26,51 +26,43 @@
 #==============================================================================
 
 module FlightConfiguration
-  class Logs
-    def initialize
-      @logs = []
+  # Stores a reference to where a particular key came from
+  # NOTE: The type specifies if it came from the :env or :file
+  SourceStruct = Struct.new(:key, :source, :type, :value, :config) do
+    def attribute
+      @attribute ||= config.class.attributes[key] || {}
     end
 
-    def file_loaded(file)
-      info "Loaded #{file}"
+    def transform_valid?
+      transformed_value unless defined?(@transform_valid)
+      @transform_valid
     end
 
-    def file_not_found(file)
-      debug "Not found #{file}"
+    def recognized?
+      !attribute.empty?
     end
 
-    def set_from_source(key, source)
-      if source.type == :default
-        debug "Config '#{key}' set to default"
-      elsif source.recognized?
-        type = source.type == :env ? 'env var ' : ''
-        debug "Config '#{key}' loaded from #{type}#{source.source}"
+    def transformed_value
+      if defined?(@transformed_value)
+        return @transformed_value
+      end
+
+      transform = attribute[:transform]
+      @transformed_value = if transform.nil?
+        value
+      elsif transform.respond_to?(:call)
+        transform.call(value)
       else
-        warn "Ignoring unrecognized config '#{key}' (source: #{source.source})"
+        value.send(transform)
       end
-    end
-
-    def debug(msg)
-      @logs << [:debug, msg]
-    end
-
-    def info(msg)
-      @logs << [:info, msg]
-    end
-
-    def warn(msg)
-      @logs << [:warn, msg]
-    end
-
-    def error(msg)
-      @logs << [:error, msg]
-    end
-
-    def log_with(logger)
-      @logs.each do |type, msg|
-        logger.send(type, "FC: #{msg}")
-      end
-      @logs.clear
+    rescue
+      config.__logs__.error("Failed to coerce attribute: #{key}")
+      config.__logs__.debug $!.full_message
+      @transform_valid = false
+      nil
+    else
+      @transform_valid = true
+      @transformed_value
     end
   end
 end

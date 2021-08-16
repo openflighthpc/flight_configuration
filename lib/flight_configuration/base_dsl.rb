@@ -29,25 +29,6 @@ require 'pathname'
 require 'yaml'
 
 module FlightConfiguration
-  module DeepStringifyKeys
-    def self.stringify(object)
-      case object
-      when Hash
-        object.each_with_object(object.class.new) do |(key, value), memo|
-          memo[key.to_s] = self.stringify(value)
-        end
-      when Array
-        object.map { |v| self.stringify(v) }
-      else
-        object
-      end
-    end
-  end
-
-  # Stores a reference to where a particular key came from
-  # NOTE: The type specifies if it came from the :env or :file
-  SourceStruct = Struct.new(:key, :source, :type, :value, :unrecognized)
-
   # NOTE: This inheritance hierarchy is becoming unwieldy and follows
   #       a extend/include InstanceMethods anti-pattern
   #
@@ -62,6 +43,24 @@ module FlightConfiguration
 
       def __logs__
         @__logs__ ||= Logs.new
+      end
+
+      def respond_to_missing?(method, *args)
+        return true if [:validate, :validate!].include? method
+        super
+      end
+
+      # Support the validate/validate! methods without defining them
+      # This allows ActiveValidation to redefine it
+      def method_missing(method, *args)
+        case method
+        when :validate
+          FallbackValidator.validate(self)
+        when :validate!
+          FallbackValidator.validate!(self)
+        else
+          super
+        end
       end
     end
 
@@ -145,31 +144,39 @@ module FlightConfiguration
       define_method("#{name.to_s}_before_type_cast") do
         __sources__[name]&.value
       end
+
+      # Defines the default ActiveValidation validators (when applicable)
+      if active_validation?
+        validates(name, presence: true) if required
+        validate do
+          next if __sources__[name].transform_valid?
+          @errors.add name, type: :transform,
+            message: 'failed to coerce the data type'
+        end
+      end
+    end
+
+    def build
+      new.tap do |config|
+        # Set the attributes
+        merge_sources(config).each do |key, source|
+          config.send("#{key}=", source.transformed_value) if source.recognized?
+          config.__logs__.set_from_source(key, source)
+        end
+      end
     end
 
     def load
-      new.tap do |config|
-        merge_sources(config).each do |key, source|
-          required = attributes.fetch(key, {})[:required]
-          if source.value.nil? && required
-            if active_errors?
-              config.errors.add(key, :required, message: 'is required')
-            else
-              raise Error, "The required config has not been provided: #{key}"
-            end
-          elsif config.respond_to?("#{key}=")
-            config.send("#{key}=", transform(config, key, source.value))
-          else
-            source.unrecognized = true
+      build.tap do |config|
+        if active_validation?
+          unless config.valid?
+            msg = RichActiveValidationErrorMessage.rich_error_message(config)
+            raise Error, msg
           end
-          config.__logs__.set_from_source(key, source)
+        else
+          config.validate!
         end
-
-        # Attempt to validate the config
-        validate_config(config)
       end
-    rescue => e
-      raise e, "Cannot continue as the configuration is invalid:\n#{e.message}", e.backtrace
     end
 
     # NOTE: Both the logs and inbuilt required mechanism rely on 'defaults'
@@ -191,6 +198,13 @@ module FlightConfiguration
 
     private
 
+    def active_validation?
+      return @active_validation unless @active_validation.nil?
+      @active_validation = ancestors.find do |klass|
+        klass.to_s == 'ActiveModel::Validations'
+      end
+    end
+
     def merge_sources(config)
       config.__sources__.tap do |sources|
         # Pre-populate the keys to give them a defined order in the logs
@@ -198,7 +212,7 @@ module FlightConfiguration
 
         # Apply the env vars
         from_env_vars.each do |key, value|
-          sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value)
+          sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value, config)
         end
 
         # Apply the configs
@@ -212,14 +226,14 @@ module FlightConfiguration
           hash.each do |key, value|
             next if sources[key]
             # Ensure the file is a string and not pathname
-            sources[key] = SourceStruct.new(key, file.to_s, :file, value)
+            sources[key] = SourceStruct.new(key, file.to_s, :file, value, config)
           end
         end
 
         # Apply the defaults
         defaults.each do |key, value|
           next if sources[key]
-          sources[key] = SourceStruct.new(key, nil, :default, value)
+          sources[key] = SourceStruct.new(key, nil, :default, value, config)
         end
       end
     end
@@ -237,12 +251,6 @@ module FlightConfiguration
       FlightConfiguration::DeepStringifyKeys.stringify(yaml) || {}
     end
 
-    # Checks if ActiveValidation/ ActiveErrors can be used
-    # Requires the 'errors' and 'valid?' methods
-    def active_errors?
-      @active_errors ||= (self.instance_methods & [:errors, :valid?]).length == 2
-    end
-
     def from_env_vars
       envs = attributes.values.reduce({}) do |accum, attr|
         if attr[:env_var]
@@ -254,122 +262,6 @@ module FlightConfiguration
         accum
       end
       DeepStringifyKeys.stringify(envs)
-    end
-
-    def transform(config, key, value)
-      config_definition = attributes.fetch(key.to_s, {})
-      transform = config_definition[:transform]
-      if transform.nil?
-        value
-      elsif transform.respond_to?(:call)
-        transform.call(value)
-      else
-        value.send(transform)
-      end
-    rescue
-      # NOTE: Ideally the error would be logged, however this can't be done
-      #       without forming a recursive loop
-      if active_errors?
-        config.errors.add(key.to_sym, type: :transform, message: 'failed to coerce the data type')
-      else
-        raise Error, "Failed to coerce attribute: #{key}"
-      end
-    end
-
-    # The 'validate' method is already used by ActiveValidation, so validate_config is used instead
-    def validate_config(config)
-      # Use active errors instead
-      if active_errors?
-        validate_active_errors(config)
-
-      # Attempt to use validate! instead
-      elsif config.respond_to?(:validate!)
-        config.validate!
-
-      # Otherwise raise a generic error if invalid
-      elsif config.respond_to?(:valid?) && !valid?
-        raise Error, <<~ERROR
-          Failed to validate the application's configuration
-        ERROR
-      end
-    end
-
-    def validate_active_errors(config)
-      # Get the current state of the errors and validate
-      current_errors = config.errors.dup
-      return if config.valid? && current_errors.empty?
-
-      # Variable definitions
-      sources = config.__sources__
-      initial = { file: {}, env: [], default: [], missing: [] }
-      all_errors = [current_errors, config.errors]
-
-      # Group errors into their sources
-      sections = all_errors.reduce(initial) do |set_memo, errors|
-        errors.reduce(set_memo) do |memo, error|
-          # Key standardization may not be required, particularly if using ActiveValidation
-          # However it has been retained due to the loose coupling
-          # Consider removing if hard coupling is introduced
-          key = error.attribute.to_s.sub(/_before_type_cast\Z/, '')
-          source = sources[key]
-          case source&.type
-          when NilClass
-            memo[:missing] << [key, error]
-          when :file
-            memo[:file][source.source] ||= []
-            memo[:file][source.source] << [key, error]
-          when :env
-            memo[source.type] << [source.source, error]
-          else
-            memo[source.type] << [key, error]
-          end
-          memo
-        end
-        set_memo
-      end
-
-      # Generate the error message
-      msg = ""
-
-      # Display generic errors which do not correspond with any attributes
-      unless sections[:missing].empty?
-        msg << "\n\nThe following errors have occurred:"
-        sections[:missing].each do |_, error|
-          msg << "\n* #{error.full_message}"
-        end
-      end
-
-      # Display the environment variables
-      unless sections[:env].empty?
-        msg << "\n\nThe following environment variable(s) are invalid:"
-        sections[:env].each do |env, error|
-          msg << "\n* #{env}: #{error.message}"
-        end
-      end
-
-      # Display errors from a config file
-      config_files.reverse.map(&:to_s).each do |path|
-        next if sections[:file][path].blank?
-        msg << "\n\nThe following config contains invalid attribute(s): #{path}"
-        sections[:file][path].each do |key, error|
-          msg << "\n* #{key}: #{error.message}"
-        end
-      end
-
-      # Display errors associated with the defaults
-      # NOTE: *Technically* they could error for any validation reason, but the primary
-      # use case is they are missing. A sensible default can not be provided in all cases,
-      # so instead the user should be prompted to provide them.
-      unless sections[:default].empty?
-        msg << "\n\nThe following required attribute(s) have not been set:"
-        sections[:default].map { |k, _| k }.uniq.each do |attr|
-          msg << "\n* #{attr}"
-        end
-      end
-
-      # Raise the error
-      # NOTE: The first newline needs to be removed
-      raise Error, msg[1..-1]
     end
   end
 end
