@@ -179,19 +179,6 @@ module FlightConfiguration
       end
     end
 
-    # NOTE: Both the logs and inbuilt required mechanism rely on 'defaults'
-    #       containing each key within 'attributes'. Failure to do so may
-    #       lead to nil errors.
-    def defaults
-      hash = attributes.values.reduce({}) do |accum, attr|
-        key = attr[:name]
-        default = attr[:default]
-        accum[key] = default.respond_to?(:call) ? default.call : default
-        accum
-      end
-      DeepStringifyKeys.stringify(hash)
-    end
-
     def relative_to(base_path)
       ->(value) { File.expand_path(value, base_path) }
     end
@@ -231,9 +218,10 @@ module FlightConfiguration
         end
 
         # Apply the defaults
-        defaults.each do |key, value|
+        attributes.values.each do |attr|
+          key = attr[:name].to_s
           next if sources[key]
-          sources[key] = SourceStruct.new(key, nil, :default, value, config)
+          sources[key] = SourceStruct.new(key, nil, :default, attr[:default], config)
         end
       end
     end

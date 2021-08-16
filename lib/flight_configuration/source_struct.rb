@@ -27,10 +27,21 @@
 
 module FlightConfiguration
   # Stores a reference to where a particular key came from
-  # NOTE: The type specifies if it came from the :env or :file
-  SourceStruct = Struct.new(:key, :source, :type, :value, :config) do
+  #
+  # The type specifies if it came from the :env, :file or the :default.
+  class SourceStruct
+    attr_reader :key, :source, :type, :value
+
+    def initialize(key, source, type, value, config)
+      @key = key
+      @source = source
+      @type = type
+      @value = value
+      @config = config
+    end
+
     def attribute
-      @attribute ||= config.class.attributes[key] || {}
+      @attribute ||= @config.class.attributes[key] || {}
     end
 
     def transform_valid?
@@ -62,6 +73,20 @@ module FlightConfiguration
     else
       @transform_valid = true
       @transformed_value
+    end
+
+    def value
+      return @value unless type == :default && !@default_set
+
+      @default_set = true
+      default = attribute[:default]
+      @value = if default.respond_to?(:call) && default.arity == 0
+        default.call
+      elsif default.respond_to?(:call)
+        default.call(@config)
+      else
+        default
+      end
     end
   end
 end
