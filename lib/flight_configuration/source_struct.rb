@@ -55,9 +55,8 @@ module FlightConfiguration
       else
         value.send(transform)
       end
-    rescue
-      config.__logs__.error("Failed to coerce attribute: #{key}")
-      config.__logs__.debug $!.full_message
+    rescue => e
+      @config.__logs__.error("Failed to coerce attribute: #{key}") { e.full_message }
       @transform_valid = false
       nil
     else

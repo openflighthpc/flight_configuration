@@ -62,13 +62,17 @@ module FlightConfiguration
       @logs << [:warn, msg]
     end
 
-    def error(msg)
-      @logs << [:error, msg]
+    def error(msg, &block)
+      @logs << [:error, msg, block]
     end
 
     def log_with(logger)
-      @logs.each do |type, msg|
-        logger.send(type, "FC: #{msg}")
+      @logs.each do |type, msg, block|
+        if block
+          logger.send(type, "FC: #{msg}", &block)
+        else
+          logger.send(type, "FC: #{msg}")
+        end
       end
       @logs.clear
     end
