@@ -142,7 +142,7 @@ module FlightConfiguration
 
       # Define the accessor that returns the original value
       define_method("#{name.to_s}_before_type_cast") do
-        __sources__[name]&.value
+        __sources__[name]&.value_before_type_cast
       end
 
       # Defines the default ActiveValidation validators (when applicable)
@@ -160,7 +160,7 @@ module FlightConfiguration
       new.tap do |config|
         # Set the attributes
         merge_sources(config).each do |key, source|
-          config.send("#{key}=", source.transformed_value) if source.recognized?
+          config.send("#{key}=", source.value) if source.recognized?
           config.__logs__.set_from_source(key, source)
         end
       end

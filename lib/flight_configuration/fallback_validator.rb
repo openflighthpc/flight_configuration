@@ -30,7 +30,7 @@ module FlightConfiguration
     def self.validate(config)
       errors = []
       config.__sources__.each do |_, source|
-        if source.attribute[:required] && source.value.nil?
+        if source.attribute[:required] && source.value_before_type_cast.nil?
           errors << [:missing, source.key]
         end
         unless source.transform_valid?
