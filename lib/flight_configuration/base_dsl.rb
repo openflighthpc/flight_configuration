@@ -45,6 +45,14 @@ module FlightConfiguration
         end
       end
 
+      def user_config_files(*paths)
+        @user_config_files ||= []
+        unless paths.empty?
+          @user_config_files.push(*paths.map { |p| File.expand_path(p, root_path) })
+        end
+        @user_config_files
+      end
+
       def root_path(path = nil)
         case path
         when String
@@ -64,6 +72,11 @@ module FlightConfiguration
           raise Error, "The env_var_prefix has not been defined!"
         end
         @env_var_prefix
+      end
+
+      def user_configs(*configs)
+        @user_configs ||= []
+        @user_configs.tap { |c| c.push(*configs.map(&:to_s)) }
       end
 
       def attributes
@@ -152,18 +165,28 @@ module FlightConfiguration
             sources[key] = SourceStruct.new(key, "#{env_var_prefix}_#{key}", :env, value, config)
           end
 
-          # Apply the configs
-          config_files.reverse.each do |file|
-            hash = from_config_file(file) || {}
-            if File.exists?(file)
-              config.__logs__.file_loaded(file)
-            else
-              config.__logs__.file_not_found(file)
-            end
-            hash.each do |key, value|
-              next if sources[key]
-              # Ensure the file is a string and not pathname
-              sources[key] = SourceStruct.new(key, file.to_s, :file, value, config)
+          # Apply the configs (user configs take precedence)
+          { user: user_config_files, system: config_files }.each do |type, files|
+            files.reverse.each do |file|
+              hash = from_config_file(file) || {}
+              if File.exists?(file)
+                config.__logs__.file_loaded(file, type: type)
+              else
+                config.__logs__.file_not_found(file, type: type)
+              end
+              hash.each do |key, value|
+                # Prevent the attribute being reset
+                next if sources[key]
+
+                # Prevent user files updating system configs
+                if type == :user && !user_configs.include?(key.to_s)
+                  config.__logs__.warn "Cannot set config '#{key}' from user file: #{file}"
+                  next
+                end
+
+                # Ensure the file is a string and not pathname
+                sources[key] = SourceStruct.new(key, file.to_s, :file, value, config)
+              end
             end
           end
 

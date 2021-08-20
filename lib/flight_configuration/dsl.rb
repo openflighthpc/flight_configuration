@@ -75,6 +75,13 @@ module FlightConfiguration
         super
       end
 
+      def user_config_files(*_)
+        @user_config_files ||= [
+          File.expand_path("~/.config/flight/#{application_name}.yaml")
+        ]
+        super
+      end
+
       def env_var_prefix(*_)
         @env_var_prefix ||=
           begin
