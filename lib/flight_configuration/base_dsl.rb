@@ -47,7 +47,12 @@ module FlightConfiguration
 
       def user_config_files(*paths)
         @user_config_files ||= []
-        unless paths.empty?
+        if paths.empty?
+          # NOOP
+        elsif paths.first == false
+          # Allow the user_config_files to be unset
+          @user_config_files = []
+        else
           @user_config_files.push(*paths.map { |p| File.expand_path(p, root_path) })
         end
         @user_config_files
