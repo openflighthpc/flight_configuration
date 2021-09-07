@@ -49,38 +49,48 @@ module FlightConfiguration
   #   Typically, `production` or `development`.  Used to determine which
   #   configuration files are loaded.
   module DSL
+    extend Concern
     include BaseDSL
 
-    def application_name(name=nil)
-      @application_name ||= name
-      if @application_name.nil?
-        raise Error, 'The application_name has not been defined!'
-      end
-      @application_name
-    end
-
-    def root_path(*_)
-      super Flight.root
-    end
-
-    def config_files(*_)
-      @config_files ||= [
-        root_path.join("etc/#{application_name}.yaml"),
-        root_path.join("etc/#{application_name}.#{Flight.env}.yaml"),
-        root_path.join("etc/#{application_name}.local.yaml"),
-        root_path.join("etc/#{application_name}.#{Flight.env}.local.yaml"),
-      ]
-      super
-    end
-
-    def env_var_prefix(*_)
-      @env_var_prefix ||=
-        begin
-          parts = application_name.split(/[_-]/)
-          parts.shift if parts.first == 'flight'
-          ['flight', parts.map(&:upcase)].join('_')
+    class_methods do
+      def application_name(name=nil)
+        @application_name ||= name
+        if @application_name.nil?
+          raise Error, 'The application_name has not been defined!'
         end
-      super
+        @application_name
+      end
+
+      def root_path(*_)
+        super Flight.root
+      end
+
+      def config_files(*_)
+        @config_files ||= [
+          root_path.join("etc/#{application_name}.yaml"),
+          root_path.join("etc/#{application_name}.#{Flight.env}.yaml"),
+          root_path.join("etc/#{application_name}.local.yaml"),
+          root_path.join("etc/#{application_name}.#{Flight.env}.local.yaml"),
+        ]
+        super
+      end
+
+      def user_config_files(*_)
+        @user_config_files ||= [
+          File.expand_path("~/.config/flight/#{application_name}.yaml")
+        ]
+        super
+      end
+
+      def env_var_prefix(*_)
+        @env_var_prefix ||=
+          begin
+            parts = application_name.split(/[_-]/)
+            parts.shift if parts.first == 'flight'
+            ['flight', parts.map(&:upcase)].join('_')
+          end
+        super
+      end
     end
   end
 end

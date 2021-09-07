@@ -31,12 +31,12 @@ module FlightConfiguration
       @logs = []
     end
 
-    def file_loaded(file)
-      info "Loaded #{file}"
+    def file_loaded(file, type: 'unknown')
+      info "Loaded (#{type}) #{file}"
     end
 
-    def file_not_found(file)
-      debug "Not found #{file}"
+    def file_not_found(file, type: 'unknown')
+      debug "Not found (#{type}) #{file}"
     end
 
     def set_from_source(key, source)

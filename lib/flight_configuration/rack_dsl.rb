@@ -36,50 +36,53 @@ module FlightConfiguration
   # Provides convention over the mechanism provided in `BaseDSL`.  The
   # convention is suitable for a Rack app, hence the name.
   module RackDSL
+    extend Concern
     include BaseDSL
 
-    def application_name(name=nil)
-      @application_name ||= name
-      if @application_name.nil?
-        raise Error, 'The application_name has not been defined!'
-      end
-      @application_name
-    end
-
-    def config_files(*_)
-      @config_files ||= begin
-        if ENV['RACK_ENV'] == 'production'
-          [root_path.join("etc/#{application_name}.yaml")]
-        else
-          [root_path.join("etc/#{application_name}.#{ENV['RACK_ENV']}.yaml"),
-           root_path.join("etc/#{application_name}.#{ENV['RACK_ENV']}.local.yaml")]
+    class_methods do
+      def application_name(name=nil)
+        @application_name ||= name
+        if @application_name.nil?
+          raise Error, 'The application_name has not been defined!'
         end
+        @application_name
       end
-      super
-    end
 
-    def root_path(path = nil)
-      case path
-      when String
-        @root_path = Pathname.new(path)
-      when Pathname
-        @root_path = path
-      end
-      if @root_path.nil?
-        raise Error, "The root_path has not been defined!"
-      end
-      @root_path
-    end
-
-    def env_var_prefix(*_)
-      @env_var_prefix ||=
-        begin
-          parts = application_name.split(/[_-]/)
-          flight_part = (parts.first == 'flight' ? [parts.shift] : [])
-          parts.map!(&:upcase)
-          [*flight_part, *parts].join('_')
+      def config_files(*_)
+        @config_files ||= begin
+          if ENV['RACK_ENV'] == 'production'
+            [root_path.join("etc/#{application_name}.yaml")]
+          else
+            [root_path.join("etc/#{application_name}.#{ENV['RACK_ENV']}.yaml"),
+             root_path.join("etc/#{application_name}.#{ENV['RACK_ENV']}.local.yaml")]
+          end
         end
-      super
+        super
+      end
+
+      def root_path(path = nil)
+        case path
+        when String
+          @root_path = Pathname.new(path)
+        when Pathname
+          @root_path = path
+        end
+        if @root_path.nil?
+          raise Error, "The root_path has not been defined!"
+        end
+        @root_path
+      end
+
+      def env_var_prefix(*_)
+        @env_var_prefix ||=
+          begin
+            parts = application_name.split(/[_-]/)
+            flight_part = (parts.first == 'flight' ? [parts.shift] : [])
+            parts.map!(&:upcase)
+            [*flight_part, *parts].join('_')
+          end
+        super
+      end
     end
   end
 end

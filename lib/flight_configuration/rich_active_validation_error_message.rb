@@ -38,18 +38,24 @@ module FlightConfiguration
         # Key standardization may not be required, particularly if using ActiveValidation
         # However it has been retained due to the loose coupling
         # Consider removing if hard coupling is introduced
-        key = error.attribute.to_s.sub(/_before_type_cast\Z/, '')
+        #
+        # NOTE: ActiveSupport version 5 returns an array
+        key, message = if error.is_a? Array
+          [error.first.to_s.sub(/_before_type_cast\Z/, ''), error.last[:message]]
+        else
+          [error.attribute.to_s.sub(/_before_type_cast\Z/, ''), error.message]
+        end
         source = sources[key]
         case source&.type
         when NilClass
           memo[:missing] << [key, error]
         when :file
           memo[:file][source.source] ||= []
-          memo[:file][source.source] << [key, error]
+          memo[:file][source.source] << [key, message]
         when :env
-          memo[source.type] << [source.source, error]
+          memo[source.type] << [source.source, message]
         else
-          memo[source.type] << [key, error]
+          memo[source.type] << [key, message]
         end
         memo
       end
@@ -61,7 +67,7 @@ module FlightConfiguration
       unless sections[:missing].empty?
         msg << "\n\nThe following errors have occurred:"
         sections[:missing].each do |_, error|
-          msg << "\n* #{error.full_message}"
+          msg << "\n* #{error}"
         end
       end
 
@@ -69,7 +75,7 @@ module FlightConfiguration
       unless sections[:env].empty?
         msg << "\n\nThe following environment variable(s) are invalid:"
         sections[:env].each do |env, error|
-          msg << "\n* #{env}: #{error.message}"
+          msg << "\n* #{env}: #{error}"
         end
       end
 
@@ -78,7 +84,7 @@ module FlightConfiguration
         next if sections[:file][path].blank?
         msg << "\n\nThe following config contains invalid attribute(s): #{path}"
         sections[:file][path].each do |key, error|
-          msg << "\n* #{key}: #{error.message}"
+          msg << "\n* #{key}: #{error}"
         end
       end
 
