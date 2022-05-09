@@ -38,6 +38,7 @@ module FlightConfiguration
       @type = type
       @value_before_type_cast = value_before_type_cast
       @config = config
+      @default_set = false
     end
 
     def attribute
