@@ -154,7 +154,7 @@ module FlightConfiguration
       private
 
       def active_validation?
-        return @active_validation unless @active_validation.nil?
+        return @active_validation if defined?(@active_validation)
         @active_validation = ancestors.find do |klass|
           klass.to_s == 'ActiveModel::Validations'
         end
@@ -174,7 +174,7 @@ module FlightConfiguration
           { user: user_config_files, system: config_files }.each do |type, files|
             files.reverse.each do |file|
               hash = from_config_file(file) || {}
-              if File.exists?(file)
+              if File.exist?(file)
                 config.__logs__.file_loaded(file, type: type)
               else
                 config.__logs__.file_not_found(file, type: type)
@@ -205,7 +205,7 @@ module FlightConfiguration
       end
 
       def from_config_file(config_file)
-        return {} unless File.exists?(config_file)
+        return {} unless File.exist?(config_file)
         yaml =
           begin
             YAML.load_file(config_file)
