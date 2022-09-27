@@ -1,6 +1,16 @@
 # FlightConfiguration
 
-FlightConfiguration is a helper library to provide JWT authentication to flight applications.
+`flight_configuration` is a configuration library designed for
+`flight-user-suite` and `flight-web-suite`.
+
+Those two suites have some unusual requirements for the installation
+mechanisms that they support including configuration.
+`flight_configuration` is designed to abstract those requirements.
+
+If you are developing an application that is not part of
+`flight-user-suite` or `flight-web-suite` you are likely better off with
+some other configuration library, perhaps
+[tty-config](https://github.com/piotrmurach/tty-config).
 
 ## Installation
 
